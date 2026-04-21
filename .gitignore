@@ -1,5 +1,7 @@
-.env
-*.env
+planner.db
+plan_*.md
+plan_*.json
 __pycache__/
 *.pyc
-.DS_Store
+.env
+.superpowers/
