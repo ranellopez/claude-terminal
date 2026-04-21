@@ -182,6 +182,57 @@ def edit_profile_menu(conn):
         print("Plan regenerated.")
 
 
+def generate_plan_library(profile, conn):
+    gym_days = [d.strip() for d in profile["gym_days"].split(",")]
+    meal_prep_day = profile["meal_prep_day"].strip()
+    all_meals = get_all_meals(conn)
+    all_exercises = get_all_exercises(conn)
+    filtered_meals = filter_meals(all_meals, profile)
+    filtered_exercises = filter_exercises(all_exercises, profile)
+
+    plan = {}
+    for day in DAYS:
+        meals = sample_meals(filtered_meals)
+        if day in gym_days:
+            exercises = random.sample(filtered_exercises, min(4, len(filtered_exercises)))
+            plan[day] = {
+                "type": "gym",
+                "exercises": [{"name": e["name"], "sets": e["sets"], "reps": e["reps"]} for e in exercises],
+                "meals": meals,
+            }
+        elif day == meal_prep_day:
+            prep_items = random.sample(filtered_meals, min(5, len(filtered_meals)))
+            plan[day] = {
+                "type": "meal_prep",
+                "prep_tasks": [m["name"] for m in prep_items],
+                "meals": meals,
+            }
+        else:
+            plan[day] = {
+                "type": "rest",
+                "activity": random.choice(REST_ACTIVITIES),
+                "meals": meals,
+            }
+    return plan
+
+
+def save_plan(conn, week_start, plan):
+    conn.execute("""
+        INSERT INTO weekly_plans (week_start, plan_json, created_at)
+        VALUES (?, ?, datetime('now'))
+        ON CONFLICT(week_start) DO UPDATE SET plan_json=excluded.plan_json, created_at=excluded.created_at
+    """, (week_start, json.dumps(plan)))
+    conn.commit()
+
+
+def load_current_plan(conn):
+    week_start = get_week_start()
+    row = conn.execute("SELECT plan_json FROM weekly_plans WHERE week_start=?", (week_start,)).fetchone()
+    if row is None:
+        return None
+    return json.loads(row["plan_json"])
+
+
 def get_week_start():
     today = date.today()
     return (today - timedelta(days=today.weekday())).isoformat()

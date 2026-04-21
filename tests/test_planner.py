@@ -3,13 +3,27 @@ import sqlite3
 from datetime import date, timedelta
 sys.path.insert(0, ".")
 import pytest
-from planner import init_db, get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES, save_profile, load_profile
+from planner import init_db, get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES, save_profile, load_profile, generate_plan_library, save_plan, load_current_plan, DAYS
 
 
 def make_conn():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     return conn
+
+
+SAMPLE_PROFILE = {
+    "goal": "build_muscle",
+    "gym_days": "Mon,Wed,Fri",
+    "rest_days": "Tue,Thu,Sun",
+    "meal_prep_day": "Sat",
+    "fitness_level": "intermediate",
+    "equipment": "dumbbells,bodyweight",
+    "dietary_preference": "none",
+    "allergies": "none",
+    "daily_calorie_target": 2800,
+    "protein_target_g": 180,
+}
 
 
 def test_init_db_creates_tables():
@@ -88,3 +102,34 @@ def test_save_and_load_profile_roundtrip():
     assert loaded["goal"] == "build_muscle"
     assert loaded["gym_days"] == "Mon,Wed,Fri"
     assert loaded["daily_calorie_target"] == 2500
+
+
+def test_generate_plan_library_has_all_days():
+    conn = make_conn()
+    init_db(conn)
+    plan = generate_plan_library(SAMPLE_PROFILE, conn)
+    for day in DAYS:
+        assert day in plan
+        assert "type" in plan[day]
+        assert "meals" in plan[day]
+
+
+def test_generate_plan_library_gym_days_have_exercises():
+    conn = make_conn()
+    init_db(conn)
+    plan = generate_plan_library(SAMPLE_PROFILE, conn)
+    for day in ["Mon", "Wed", "Fri"]:
+        assert plan[day]["type"] == "gym"
+        assert len(plan[day]["exercises"]) > 0
+
+
+def test_save_and_load_plan_roundtrip():
+    conn = make_conn()
+    init_db(conn)
+    plan = generate_plan_library(SAMPLE_PROFILE, conn)
+    week_start = get_week_start()
+    save_plan(conn, week_start, plan)
+    loaded = load_current_plan(conn)
+    assert loaded is not None
+    for day in DAYS:
+        assert day in loaded
