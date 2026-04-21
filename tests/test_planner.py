@@ -3,7 +3,7 @@ import sqlite3
 from datetime import date, timedelta
 sys.path.insert(0, ".")
 import pytest
-from planner import init_db, get_week_start
+from planner import init_db, get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES
 
 
 def make_conn():
@@ -26,3 +26,37 @@ def test_get_week_start_is_monday():
     ws = get_week_start()
     d = date.fromisoformat(ws)
     assert d.weekday() == 0  # Monday == 0
+
+
+def test_filter_meals_by_goal():
+    profile = {"goal": "build_muscle", "dietary_preference": "none"}
+    results = filter_meals(MEALS, profile)
+    assert len(results) > 0
+    for m in results:
+        assert "build_muscle" in m["goal"]
+
+
+def test_filter_meals_by_dietary():
+    profile = {"goal": "maintain", "dietary_preference": "vegan"}
+    results = filter_meals(MEALS, profile)
+    for m in results:
+        assert "vegan" in m["dietary"]
+
+
+def test_filter_exercises_by_goal_and_equipment():
+    profile = {"goal": "build_muscle", "equipment": "dumbbells,bodyweight"}
+    results = filter_exercises(EXERCISES, profile)
+    assert len(results) > 0
+    for e in results:
+        assert "build_muscle" in e["goal"]
+        user_equip = [eq.strip() for eq in profile["equipment"].split(",")]
+        assert any(eq in user_equip for eq in e["equipment"])
+
+
+def test_sample_meals_returns_all_types():
+    profile = {"goal": "build_muscle", "dietary_preference": "none"}
+    meals = filter_meals(MEALS, profile)
+    sampled = sample_meals(meals)
+    assert "breakfast" in sampled
+    assert "lunch" in sampled
+    assert "dinner" in sampled
