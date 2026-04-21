@@ -484,8 +484,146 @@ def meal_checker_menu(conn):
     print(f"\n{result}\n")
 
 
+def export_markdown(plan, week_start, check_offs):
+    done_set = {(c["day"], c["item_type"], c["item_name"]) for c in check_offs if c["done"]}
+    lines = [f"# Weekly Plan — {week_start}\n"]
+    for day in DAYS:
+        if day not in plan:
+            continue
+        entry = plan[day]
+        lines.append(f"## {day} ({entry['type'].upper()})\n")
+        if entry["type"] == "gym":
+            lines.append("### Workout")
+            for ex in entry["exercises"]:
+                done = "~~" if (day, "exercise", ex["name"]) in done_set else ""
+                end = "~~" if done else ""
+                lines.append(f"- {done}{ex['name']} — {ex['sets']} sets x {ex['reps']}{end}")
+        elif entry["type"] == "meal_prep":
+            lines.append("### Prep Tasks")
+            for task in entry["prep_tasks"]:
+                lines.append(f"- {task}")
+        else:
+            lines.append(f"**Rest Activity:** {entry['activity']}\n")
+        lines.append("\n### Meals")
+        for meal_type in ["breakfast", "lunch", "dinner", "snack"]:
+            name = entry["meals"].get(meal_type, "—")
+            lines.append(f"- **{meal_type.capitalize()}:** {name}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def export_json(plan, week_start):
+    return json.dumps({"week_start": week_start, "plan": plan}, indent=2)
+
+
+def export_menu(conn):
+    plan = load_current_plan(conn)
+    if plan is None:
+        print("No plan this week. Generate one first.")
+        return
+    week_start = get_week_start()
+    check_offs = load_check_offs(conn, week_start)
+    print("\nExport format:")
+    print("  1. Markdown (.md)")
+    print("  2. JSON (.json)")
+    print("  3. Both")
+    choice = input("Enter 1-3: ").strip()
+    if choice in ("1", "3"):
+        fname = f"plan_{week_start}.md"
+        with open(fname, "w") as f:
+            f.write(export_markdown(plan, week_start, check_offs))
+        print(f"Saved: {fname}")
+    if choice in ("2", "3"):
+        fname = f"plan_{week_start}.json"
+        with open(fname, "w") as f:
+            f.write(export_json(plan, week_start))
+        print(f"Saved: {fname}")
+
+
+def add_custom_item(conn, item_type, data):
+    conn.execute(
+        "INSERT INTO custom_items (item_type, data_json) VALUES (?, ?)",
+        (item_type, json.dumps(data))
+    )
+    conn.commit()
+
+
+def add_custom_menu(conn):
+    print("\nAdd custom item:")
+    print("  1. Meal\n  2. Exercise")
+    choice = input("Enter 1 or 2: ").strip()
+    if choice == "1":
+        name = input("Meal name: ").strip()
+        meal_type = input("Type (breakfast/lunch/dinner/snack): ").strip()
+        protein = int(input("Protein (g): ").strip() or "0")
+        calories = int(input("Calories: ").strip() or "0")
+        profile = load_profile(conn)
+        goal = [profile["goal"]] if profile else ["maintain"]
+        diet = [profile["dietary_preference"]] if profile else ["none"]
+        item = {"name": name, "goal": goal, "dietary": diet, "meal_type": meal_type, "protein_g": protein, "calories": calories}
+        add_custom_item(conn, "meal", item)
+        print(f"Added meal: {name}")
+    elif choice == "2":
+        name = input("Exercise name: ").strip()
+        muscle_group = input("Muscle group: ").strip()
+        sets = int(input("Sets: ").strip() or "3")
+        reps = input("Reps (e.g. 10-12): ").strip()
+        equipment = input("Equipment needed (comma-separated): ").strip() or "bodyweight"
+        profile = load_profile(conn)
+        goal = [profile["goal"]] if profile else ["maintain"]
+        item = {"name": name, "goal": goal, "equipment": [e.strip() for e in equipment.split(",")], "muscle_group": muscle_group, "sets": sets, "reps": reps}
+        add_custom_item(conn, "exercise", item)
+        print(f"Added exercise: {name}")
+
+
 def main():
-    print("Planner starting...")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        print("Warning: ANTHROPIC_API_KEY not set. AI features will be unavailable.")
+        print("  Set it with: export ANTHROPIC_API_KEY=your_key\n")
+
+    conn = get_db()
+
+    profile = load_profile(conn)
+    if profile is None:
+        print("Welcome! Let's set up your profile first.\n")
+        profile = profile_wizard(conn)
+        print("Generating your first weekly plan...\n")
+        generate_plan(profile, conn)
+
+    while True:
+        print("\n=== PLANNER MENU ===")
+        print("1. View this week's plan")
+        print("2. Check off items")
+        print("3. Generate new plan for this week")
+        print("4. Add custom meal or exercise")
+        print("5. Meal checker — log what you ate")
+        print("6. Export plan (markdown / JSON)")
+        print("7. Edit profile")
+        print("8. Quit")
+        choice = input("\nEnter 1-8: ").strip()
+
+        if choice == "1":
+            display_week(conn)
+        elif choice == "2":
+            check_off_menu(conn)
+        elif choice == "3":
+            profile = load_profile(conn)
+            generate_plan(profile, conn)
+            display_week(conn)
+        elif choice == "4":
+            add_custom_menu(conn)
+        elif choice == "5":
+            meal_checker_menu(conn)
+        elif choice == "6":
+            export_menu(conn)
+        elif choice == "7":
+            edit_profile_menu(conn)
+        elif choice == "8":
+            print("Goodbye!")
+            conn.close()
+            sys.exit(0)
+        else:
+            print("Invalid choice, enter 1-8.")
 
 
 if __name__ == "__main__":

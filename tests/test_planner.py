@@ -4,7 +4,8 @@ from datetime import date, timedelta
 from unittest.mock import patch, MagicMock
 sys.path.insert(0, ".")
 import pytest
-from planner import init_db, get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES, save_profile, load_profile, generate_plan_library, save_plan, load_current_plan, ask_claude, generate_plan, DAYS, format_week_view, load_check_offs, mark_done, check_meal
+import json as json_lib
+from planner import init_db, get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES, save_profile, load_profile, generate_plan_library, save_plan, load_current_plan, ask_claude, generate_plan, DAYS, format_week_view, load_check_offs, mark_done, check_meal, export_markdown, export_json, add_custom_item, get_all_meals
 
 
 def make_conn():
@@ -215,3 +216,39 @@ def test_check_meal_saves_feedback(monkeypatch):
     assert "on track" in result.lower() or "verdict" in result.lower()
     rows = conn.execute("SELECT * FROM check_offs WHERE item_type='meal_check'").fetchall()
     assert len(rows) == 1
+
+
+# Task 11: Export
+
+def test_export_markdown_contains_days():
+    conn = make_conn()
+    init_db(conn)
+    plan = generate_plan_library(SAMPLE_PROFILE, conn)
+    md = export_markdown(plan, "2026-04-20", [])
+    for day in DAYS:
+        assert day in md
+    assert "# Weekly Plan" in md
+
+
+def test_export_json_is_valid():
+    conn = make_conn()
+    init_db(conn)
+    plan = generate_plan_library(SAMPLE_PROFILE, conn)
+    result = export_json(plan, "2026-04-20")
+    parsed = json_lib.loads(result)
+    assert "week_start" in parsed
+    assert "plan" in parsed
+    for day in DAYS:
+        assert day in parsed["plan"]
+
+
+# Task 12: Custom Items
+
+def test_add_and_retrieve_custom_meal():
+    conn = make_conn()
+    init_db(conn)
+    custom = {"name": "My Special Bowl", "goal": ["build_muscle"], "dietary": ["none"], "meal_type": "lunch", "protein_g": 40, "calories": 600}
+    add_custom_item(conn, "meal", custom)
+    all_meals = get_all_meals(conn)
+    names = [m["name"] for m in all_meals]
+    assert "My Special Bowl" in names
