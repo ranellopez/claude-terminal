@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from unittest.mock import patch, MagicMock
 sys.path.insert(0, ".")
 import pytest
-from planner import init_db, get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES, save_profile, load_profile, generate_plan_library, save_plan, load_current_plan, ask_claude, generate_plan, DAYS
+from planner import init_db, get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES, save_profile, load_profile, generate_plan_library, save_plan, load_current_plan, ask_claude, generate_plan, DAYS, format_week_view, load_check_offs, mark_done, check_meal
 
 
 def make_conn():
@@ -154,3 +154,64 @@ def test_generate_plan_falls_back_without_api_key(monkeypatch):
     plan = generate_plan(SAMPLE_PROFILE, conn)
     for day in DAYS:
         assert day in plan
+
+
+# Task 8: Week View Display
+
+def test_format_week_view_contains_all_days():
+    conn = make_conn()
+    init_db(conn)
+    plan = generate_plan_library(SAMPLE_PROFILE, conn)
+    output = format_week_view(plan, [])
+    for day in DAYS:
+        assert day in output
+
+
+def test_format_week_view_shows_gym_type():
+    conn = make_conn()
+    init_db(conn)
+    plan = generate_plan_library(SAMPLE_PROFILE, conn)
+    output = format_week_view(plan, [])
+    assert "GYM" in output or "gym" in output.lower()
+
+
+# Task 9: Check-Off System
+
+def test_load_check_offs_empty():
+    conn = make_conn()
+    init_db(conn)
+    result = load_check_offs(conn, "2026-04-20")
+    assert result == []
+
+
+def test_mark_done_persists():
+    conn = make_conn()
+    init_db(conn)
+    mark_done(conn, "2026-04-20", "Mon", "exercise", "Push-ups")
+    check_offs = load_check_offs(conn, "2026-04-20")
+    assert len(check_offs) == 1
+    assert check_offs[0]["done"] == 1
+    assert check_offs[0]["item_name"] == "Push-ups"
+
+
+def test_mark_done_idempotent():
+    conn = make_conn()
+    init_db(conn)
+    mark_done(conn, "2026-04-20", "Mon", "exercise", "Push-ups")
+    mark_done(conn, "2026-04-20", "Mon", "exercise", "Push-ups")
+    check_offs = load_check_offs(conn, "2026-04-20")
+    assert len(check_offs) == 1
+
+
+# Task 10: Meal Checker
+
+def test_check_meal_saves_feedback(monkeypatch):
+    conn = make_conn()
+    init_db(conn)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    with patch("planner.ask_claude") as mock_ask:
+        mock_ask.return_value = "Verdict: on track. Estimated 520 kcal, 45g protein. Good protein source. Consider adding vegetables. Try a side salad next meal."
+        result = check_meal(SAMPLE_PROFILE, "grilled chicken and rice", conn)
+    assert "on track" in result.lower() or "verdict" in result.lower()
+    rows = conn.execute("SELECT * FROM check_offs WHERE item_type='meal_check'").fetchall()
+    assert len(rows) == 1

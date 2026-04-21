@@ -333,6 +333,157 @@ def get_db():
     return conn
 
 
+def format_week_view(plan, check_offs):
+    done_set = {(c["day"], c["item_type"], c["item_name"]) for c in check_offs if c["done"]}
+    lines = [f"\n{'='*60}", f"  WEEKLY PLAN — Week of {get_week_start()}", f"{'='*60}"]
+    for day in DAYS:
+        if day not in plan:
+            continue
+        entry = plan[day]
+        day_type = entry["type"].upper()
+        lines.append(f"\n{day} [{day_type}]")
+        lines.append("-" * 40)
+        if entry["type"] == "gym":
+            lines.append("  WORKOUT:")
+            for ex in entry["exercises"]:
+                marker = "[x]" if (day, "exercise", ex["name"]) in done_set else "[ ]"
+                lines.append(f"    {marker} {ex['name']} — {ex['sets']} sets x {ex['reps']}")
+        elif entry["type"] == "meal_prep":
+            lines.append("  PREP TASKS:")
+            for task in entry["prep_tasks"]:
+                marker = "[x]" if (day, "meal", task) in done_set else "[ ]"
+                lines.append(f"    {marker} Prep: {task}")
+        else:
+            activity = entry["activity"]
+            marker = "[x]" if (day, "rest_activity", activity) in done_set else "[ ]"
+            lines.append(f"  REST ACTIVITY: {marker} {activity}")
+        lines.append("  MEALS:")
+        for meal_type in ["breakfast", "lunch", "dinner", "snack"]:
+            name = entry["meals"].get(meal_type, "—")
+            marker = "[x]" if (day, "meal", name) in done_set else "[ ]"
+            lines.append(f"    {marker} {meal_type.capitalize()}: {name}")
+    lines.append(f"\n{'='*60}\n")
+    return "\n".join(lines)
+
+
+def display_week(conn):
+    plan = load_current_plan(conn)
+    if plan is None:
+        print("No plan for this week. Generate one first (option 3).")
+        return
+    week_start = get_week_start()
+    check_offs = load_check_offs(conn, week_start)
+    print(format_week_view(plan, check_offs))
+
+
+def load_check_offs(conn, week_start):
+    rows = conn.execute(
+        "SELECT * FROM check_offs WHERE week_start=?", (week_start,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_done(conn, week_start, day, item_type, item_name):
+    existing = conn.execute(
+        "SELECT id FROM check_offs WHERE week_start=? AND day=? AND item_type=? AND item_name=?",
+        (week_start, day, item_type, item_name)
+    ).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE check_offs SET done=1 WHERE id=?", (existing["id"],)
+        )
+    else:
+        conn.execute(
+            "INSERT INTO check_offs (week_start, day, item_type, item_name, done) VALUES (?,?,?,?,1)",
+            (week_start, day, item_type, item_name)
+        )
+    conn.commit()
+
+
+def check_off_menu(conn):
+    plan = load_current_plan(conn)
+    if plan is None:
+        print("No plan this week. Generate one first.")
+        return
+    week_start = get_week_start()
+    print("\nWhich day? (Mon/Tue/Wed/Thu/Fri/Sat/Sun): ", end="")
+    day = input().strip().capitalize()[:3]
+    if day not in plan:
+        print("Invalid day.")
+        return
+    entry = plan[day]
+    items = []
+    if entry["type"] == "gym":
+        for ex in entry["exercises"]:
+            items.append(("exercise", ex["name"]))
+    elif entry["type"] == "meal_prep":
+        for task in entry["prep_tasks"]:
+            items.append(("meal", task))
+    else:
+        items.append(("rest_activity", entry["activity"]))
+    for meal_type in ["breakfast", "lunch", "dinner", "snack"]:
+        name = entry["meals"].get(meal_type)
+        if name:
+            items.append(("meal", name))
+    print(f"\nItems for {day}:")
+    for i, (itype, name) in enumerate(items, 1):
+        print(f"  {i}. [{itype}] {name}")
+    choices = input("Enter numbers to mark done (comma-separated): ").strip()
+    for c in choices.split(","):
+        try:
+            idx = int(c.strip()) - 1
+            itype, name = items[idx]
+            mark_done(conn, week_start, day, itype, name)
+            print(f"  Marked done: {name}")
+        except (ValueError, IndexError):
+            print(f"  Invalid choice: {c.strip()}")
+
+
+def check_meal(profile, food_desc, conn):
+    prompt = f"""You are a nutrition expert. Analyze this meal for someone with:
+- Fitness goal: {profile['goal']}
+- Daily calorie target: {profile['daily_calorie_target']} kcal
+- Daily protein target: {profile['protein_target_g']}g
+- Dietary preference: {profile['dietary_preference']}
+- Allergies: {profile['allergies']}
+
+Meal logged: {food_desc}
+
+Respond in under 150 words covering:
+1. Verdict: "on track", "off track", or "partial"
+2. Estimated calories and protein
+3. What was good about this choice
+4. What could be improved
+5. One actionable suggestion for the next meal"""
+
+    try:
+        feedback = ask_claude(prompt)
+    except Exception as e:
+        feedback = f"AI unavailable: {e}"
+
+    week_start = get_week_start()
+    conn.execute("""
+        INSERT INTO check_offs (week_start, day, item_type, item_name, done, nutrition_feedback)
+        VALUES (?, ?, 'meal_check', ?, 1, ?)
+    """, (week_start, date.today().strftime("%a"), food_desc[:100], feedback))
+    conn.commit()
+    return feedback
+
+
+def meal_checker_menu(conn):
+    profile = load_profile(conn)
+    if profile is None:
+        print("Set up your profile first.")
+        return
+    print("\n=== Meal Checker ===")
+    food_desc = input("What did you eat? Describe or list items: ").strip()
+    if not food_desc:
+        return
+    print("\nAnalyzing...")
+    result = check_meal(profile, food_desc, conn)
+    print(f"\n{result}\n")
+
+
 def main():
     print("Planner starting...")
 
