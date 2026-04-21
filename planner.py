@@ -103,6 +103,85 @@ def load_profile(conn):
     return dict(row)
 
 
+def estimate_targets(goal, fitness_level):
+    targets = {
+        ("lose_weight", "beginner"): (1600, 120),
+        ("lose_weight", "intermediate"): (1800, 140),
+        ("lose_weight", "advanced"): (2000, 160),
+        ("build_muscle", "beginner"): (2500, 160),
+        ("build_muscle", "intermediate"): (2800, 180),
+        ("build_muscle", "advanced"): (3200, 200),
+        ("maintain", "beginner"): (2000, 130),
+        ("maintain", "intermediate"): (2200, 150),
+        ("maintain", "advanced"): (2500, 160),
+        ("endurance", "beginner"): (2200, 140),
+        ("endurance", "intermediate"): (2500, 160),
+        ("endurance", "advanced"): (2800, 170),
+    }
+    return targets.get((goal, fitness_level), (2000, 150))
+
+
+def profile_wizard(conn):
+    print("\n=== Profile Setup ===\n")
+
+    print("What is your fitness goal?")
+    print("  1. Lose weight\n  2. Build muscle\n  3. Maintain\n  4. Endurance")
+    goal_map = {"1": "lose_weight", "2": "build_muscle", "3": "maintain", "4": "endurance"}
+    goal = goal_map.get(input("Enter 1-4: ").strip(), "maintain")
+
+    gym_days = input("Gym days (comma-separated, e.g. Mon,Wed,Fri): ").strip() or "Mon,Wed,Fri"
+    rest_days = input("Rest days (comma-separated, e.g. Tue,Thu,Sat,Sun): ").strip() or "Tue,Thu,Sat,Sun"
+    meal_prep_day = input("Meal prep day (e.g. Sun): ").strip() or "Sun"
+
+    print("Fitness level?")
+    print("  1. Beginner\n  2. Intermediate\n  3. Advanced")
+    level_map = {"1": "beginner", "2": "intermediate", "3": "advanced"}
+    fitness_level = level_map.get(input("Enter 1-3: ").strip(), "beginner")
+
+    equipment = input("Equipment available (comma-separated, e.g. dumbbells,barbell,bodyweight): ").strip() or "bodyweight"
+
+    print("Dietary preference?")
+    print("  1. None\n  2. Vegetarian\n  3. Vegan\n  4. Gluten-free")
+    diet_map = {"1": "none", "2": "vegetarian", "3": "vegan", "4": "gluten-free"}
+    dietary_preference = diet_map.get(input("Enter 1-4: ").strip(), "none")
+
+    allergies = input("Any allergies? (or press Enter to skip): ").strip() or "none"
+
+    print("\nEstimating your calorie and protein targets...")
+    calorie_target, protein_target = estimate_targets(goal, fitness_level)
+    print(f"  Estimated daily calories: {calorie_target} kcal")
+    print(f"  Estimated daily protein:  {protein_target}g")
+    override = input("Accept these targets? (y/n): ").strip().lower()
+    if override == "n":
+        calorie_target = int(input("Enter your daily calorie target: ").strip())
+        protein_target = int(input("Enter your daily protein target (g): ").strip())
+
+    profile = {
+        "goal": goal,
+        "gym_days": gym_days,
+        "rest_days": rest_days,
+        "meal_prep_day": meal_prep_day,
+        "fitness_level": fitness_level,
+        "equipment": equipment,
+        "dietary_preference": dietary_preference,
+        "allergies": allergies,
+        "daily_calorie_target": calorie_target,
+        "protein_target_g": protein_target,
+    }
+    save_profile(conn, profile)
+    print("\nProfile saved!\n")
+    return profile
+
+
+def edit_profile_menu(conn):
+    print("\nRe-running profile wizard...")
+    profile = profile_wizard(conn)
+    regen = input("Regenerate this week's plan with new profile? (y/n): ").strip().lower()
+    if regen == "y":
+        generate_plan(profile, conn)
+        print("Plan regenerated.")
+
+
 def get_week_start():
     today = date.today()
     return (today - timedelta(days=today.weekday())).isoformat()
