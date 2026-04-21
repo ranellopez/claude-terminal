@@ -233,6 +233,55 @@ def load_current_plan(conn):
     return json.loads(row["plan_json"])
 
 
+def ask_claude(prompt):
+    client = anthropic.Anthropic()
+    response = client.messages.create(
+        model="claude-opus-4-7",
+        max_tokens=2048,
+        messages=[{"role": "user", "content": prompt}],
+        system="You are a fitness and nutrition expert. Always respond with valid JSON when asked.",
+    )
+    return response.content[0].text
+
+
+def enhance_plan_with_ai(profile, plan):
+    prompt = f"""You are a fitness and nutrition expert. Improve this weekly plan for someone with:
+- Goal: {profile['goal']}
+- Fitness level: {profile['fitness_level']}
+- Equipment: {profile['equipment']}
+- Dietary preference: {profile['dietary_preference']}
+- Allergies: {profile['allergies']}
+- Daily calorie target: {profile['daily_calorie_target']} kcal
+- Daily protein target: {profile['protein_target_g']}g
+
+Add variety to meals and ensure exercise progressions match the goal.
+Return ONLY valid JSON with exactly the same structure as the input. Do not add new keys.
+
+Current plan:
+{json.dumps(plan, indent=2)}"""
+
+    try:
+        raw = ask_claude(prompt)
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        return json.loads(raw[start:end])
+    except Exception:
+        return plan  # fall back to library plan if AI fails
+
+
+def generate_plan(profile, conn):
+    plan = generate_plan_library(profile, conn)
+    if os.getenv("ANTHROPIC_API_KEY"):
+        print("Enhancing plan with AI...")
+        plan = enhance_plan_with_ai(profile, plan)
+    else:
+        print("No ANTHROPIC_API_KEY found — using built-in library only.")
+    week_start = get_week_start()
+    save_plan(conn, week_start, plan)
+    print("Plan saved.")
+    return plan
+
+
 def get_week_start():
     today = date.today()
     return (today - timedelta(days=today.weekday())).isoformat()

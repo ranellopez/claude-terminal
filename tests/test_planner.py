@@ -1,9 +1,10 @@
 import sys
 import sqlite3
 from datetime import date, timedelta
+from unittest.mock import patch, MagicMock
 sys.path.insert(0, ".")
 import pytest
-from planner import init_db, get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES, save_profile, load_profile, generate_plan_library, save_plan, load_current_plan, DAYS
+from planner import init_db, get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES, save_profile, load_profile, generate_plan_library, save_plan, load_current_plan, ask_claude, generate_plan, DAYS
 
 
 def make_conn():
@@ -133,3 +134,23 @@ def test_save_and_load_plan_roundtrip():
     assert loaded is not None
     for day in DAYS:
         assert day in loaded
+
+
+def test_ask_claude_calls_api():
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(text="test response")]
+    with patch("anthropic.Anthropic") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        mock_client.messages.create.return_value = mock_response
+        result = ask_claude("hello")
+    assert result == "test response"
+
+
+def test_generate_plan_falls_back_without_api_key(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    conn = make_conn()
+    init_db(conn)
+    plan = generate_plan(SAMPLE_PROFILE, conn)
+    for day in DAYS:
+        assert day in plan
