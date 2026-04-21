@@ -13,7 +13,7 @@ while True:
     messages.append({"role": "user", "content": user_input})
 
     response = client.messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-opus-4-7",
         max_tokens=8096,
         messages=messages
     )
@@ -21,4 +21,3 @@ while True:
     reply = response.content[0].text
     messages.append({"role": "assistant", "content": reply})
     print(f"\nClaude: {reply}\n")
-claude

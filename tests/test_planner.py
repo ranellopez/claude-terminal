@@ -3,7 +3,7 @@ import sqlite3
 from datetime import date, timedelta
 sys.path.insert(0, ".")
 import pytest
-from planner import init_db, get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES
+from planner import init_db, get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES, save_profile, load_profile
 
 
 def make_conn():
@@ -60,3 +60,31 @@ def test_sample_meals_returns_all_types():
     assert "breakfast" in sampled
     assert "lunch" in sampled
     assert "dinner" in sampled
+
+
+def test_load_profile_returns_none_when_empty():
+    conn = make_conn()
+    init_db(conn)
+    assert load_profile(conn) is None
+
+
+def test_save_and_load_profile_roundtrip():
+    conn = make_conn()
+    init_db(conn)
+    profile = {
+        "goal": "build_muscle",
+        "gym_days": "Mon,Wed,Fri",
+        "rest_days": "Tue,Thu,Sat,Sun",
+        "meal_prep_day": "Sun",
+        "fitness_level": "intermediate",
+        "equipment": "dumbbells,barbell",
+        "dietary_preference": "none",
+        "allergies": "peanuts",
+        "daily_calorie_target": 2500,
+        "protein_target_g": 180,
+    }
+    save_profile(conn, profile)
+    loaded = load_profile(conn)
+    assert loaded["goal"] == "build_muscle"
+    assert loaded["gym_days"] == "Mon,Wed,Fri"
+    assert loaded["daily_calorie_target"] == 2500

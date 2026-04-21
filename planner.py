@@ -85,6 +85,24 @@ def get_all_exercises(conn):
     return EXERCISES + [json.loads(r["data_json"]) for r in custom]
 
 
+def save_profile(conn, profile):
+    conn.execute("DELETE FROM profile")
+    conn.execute("""
+        INSERT INTO profile (goal, gym_days, rest_days, meal_prep_day, fitness_level,
+            equipment, dietary_preference, allergies, daily_calorie_target, protein_target_g)
+        VALUES (:goal, :gym_days, :rest_days, :meal_prep_day, :fitness_level,
+            :equipment, :dietary_preference, :allergies, :daily_calorie_target, :protein_target_g)
+    """, profile)
+    conn.commit()
+
+
+def load_profile(conn):
+    row = conn.execute("SELECT * FROM profile LIMIT 1").fetchone()
+    if row is None:
+        return None
+    return dict(row)
+
+
 def get_week_start():
     today = date.today()
     return (today - timedelta(days=today.weekday())).isoformat()
