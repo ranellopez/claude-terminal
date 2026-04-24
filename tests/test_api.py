@@ -37,6 +37,7 @@ class TestPlannerAPI(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+        planner.DB_PATH = "planner.db"
         os.close(cls.db_fd)
         os.unlink(cls.db_path)
 
@@ -75,7 +76,7 @@ class TestPlannerAPI(unittest.TestCase):
     def test_05_list_plans_empty(self):
         status, data = self._req("GET", "/api/plans")
         self.assertEqual(status, 200)
-        self.assertIsInstance(data, list)
+        self.assertEqual(data, [])
 
     def test_06_generate_plan(self):
         status, data = self._req("POST", "/api/plans/generate", {})
@@ -127,6 +128,10 @@ class TestPlannerAPI(unittest.TestCase):
         status, data = self._req("POST", f"/api/plans/{plan_id}/restore", {})
         self.assertEqual(status, 200)
         self.assertTrue(data["ok"])
+        # verify the restored plan is now current
+        _, updated_plans = self._req("GET", "/api/plans")
+        current = [p for p in updated_plans if p["is_current"]]
+        self.assertTrue(len(current) > 0)
 
     def test_12_delete_plan(self):
         # generate a second plan first so we can delete without removing the only one
