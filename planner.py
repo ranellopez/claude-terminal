@@ -49,6 +49,102 @@ REST_ACTIVITIES = [
     "Swimming (easy pace, 20 min)",
 ]
 
+QUESTIONS = [
+    {
+        "key": "goal",
+        "question": "What is your fitness goal?",
+        "why": "This drives which exercises and meals get recommended for you.",
+        "type": "single",
+        "options": [
+            {"label": "Lose Weight", "value": "lose_weight"},
+            {"label": "Build Muscle", "value": "build_muscle"},
+            {"label": "Maintain", "value": "maintain"},
+            {"label": "Endurance", "value": "endurance"},
+        ],
+    },
+    {
+        "key": "gym_days",
+        "question": "Which days do you go to the gym?",
+        "why": "These days get workout plans assigned. Everything else becomes rest or meal prep.",
+        "type": "multi",
+        "options": [
+            {"label": "Mon", "value": "Mon"},
+            {"label": "Tue", "value": "Tue"},
+            {"label": "Wed", "value": "Wed"},
+            {"label": "Thu", "value": "Thu"},
+            {"label": "Fri", "value": "Fri"},
+            {"label": "Sat", "value": "Sat"},
+            {"label": "Sun", "value": "Sun"},
+        ],
+    },
+    {
+        "key": "meal_prep_day",
+        "question": "Which day do you do meal prep?",
+        "why": "This day gets a prep task list so your meals are ready for the week.",
+        "type": "single",
+        "options": [
+            {"label": "Mon", "value": "Mon"},
+            {"label": "Tue", "value": "Tue"},
+            {"label": "Wed", "value": "Wed"},
+            {"label": "Thu", "value": "Thu"},
+            {"label": "Fri", "value": "Fri"},
+            {"label": "Sat", "value": "Sat"},
+            {"label": "Sun", "value": "Sun"},
+        ],
+    },
+    {
+        "key": "fitness_level",
+        "question": "What is your fitness level?",
+        "why": "Sets your calorie and protein targets and adjusts exercise intensity.",
+        "type": "single",
+        "options": [
+            {"label": "Beginner", "value": "beginner"},
+            {"label": "Intermediate", "value": "intermediate"},
+            {"label": "Advanced", "value": "advanced"},
+        ],
+    },
+    {
+        "key": "equipment",
+        "question": "What equipment do you have access to?",
+        "why": "Only exercises you can actually do get included in your plan.",
+        "type": "multi",
+        "options": [
+            {"label": "Dumbbells", "value": "dumbbells"},
+            {"label": "Barbell", "value": "barbell"},
+            {"label": "Cables", "value": "cables"},
+            {"label": "Pull-up Bar", "value": "pull-up bar"},
+            {"label": "Bodyweight", "value": "bodyweight"},
+            {"label": "Resistance Bands", "value": "resistance bands"},
+            {"label": "Kettlebells", "value": "kettlebells"},
+        ],
+    },
+    {
+        "key": "dietary_preference",
+        "question": "Do you have a dietary preference?",
+        "why": "Filters out meals that don't match how you eat.",
+        "type": "single",
+        "options": [
+            {"label": "None", "value": "none"},
+            {"label": "Vegetarian", "value": "vegetarian"},
+            {"label": "Vegan", "value": "vegan"},
+            {"label": "Gluten-Free", "value": "gluten-free"},
+        ],
+    },
+    {
+        "key": "allergies",
+        "question": "Do you have any food allergies?",
+        "why": "Ensures AI-generated meals never suggest something you can't eat.",
+        "type": "text",
+        "placeholder": "e.g. peanuts, dairy — or type none",
+    },
+    {
+        "key": "daily_targets",
+        "question": "What are your daily targets?",
+        "why": "We'll estimate these based on your goal and level — you can override.",
+        "type": "targets",
+    },
+]
+
 
 def filter_meals(meals, profile):
     goal = profile["goal"]
@@ -231,6 +327,67 @@ def load_current_plan(conn):
     if row is None:
         return None
     return json.loads(row["plan_json"])
+
+
+def get_all_plans(conn):
+    current_week = get_week_start()
+    profile = load_profile(conn)
+    rows = conn.execute(
+        "SELECT id, week_start, plan_json, created_at FROM weekly_plans ORDER BY week_start DESC"
+    ).fetchall()
+    result = []
+    for row in rows:
+        plan = json.loads(row["plan_json"])
+        result.append({
+            "id": row["id"],
+            "week_start": row["week_start"],
+            "created_at": row["created_at"],
+            "is_current": row["week_start"] == current_week,
+            "gym_days": sum(1 for d in plan.values() if d.get("type") == "gym"),
+            "goal": profile["goal"] if profile else "unknown",
+            "daily_calorie_target": profile["daily_calorie_target"] if profile else 0,
+            "protein_target_g": profile["protein_target_g"] if profile else 0,
+            "meal_prep_day": profile["meal_prep_day"] if profile else "",
+        })
+    return result
+
+
+def get_plan_by_id(conn, plan_id):
+    row = conn.execute(
+        "SELECT id, week_start, plan_json, created_at FROM weekly_plans WHERE id=?", (plan_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "week_start": row["week_start"],
+        "created_at": row["created_at"],
+        "is_current": row["week_start"] == get_week_start(),
+        "plan": json.loads(row["plan_json"]),
+    }
+
+
+def update_plan_by_id(conn, plan_id, plan):
+    conn.execute(
+        "UPDATE weekly_plans SET plan_json=? WHERE id=?",
+        (json.dumps(plan), plan_id)
+    )
+    conn.commit()
+
+
+def delete_plan_by_id(conn, plan_id):
+    conn.execute("DELETE FROM weekly_plans WHERE id=?", (plan_id,))
+    conn.commit()
+
+
+def restore_plan_by_id(conn, plan_id):
+    row = conn.execute(
+        "SELECT plan_json FROM weekly_plans WHERE id=?", (plan_id,)
+    ).fetchone()
+    if row is None:
+        return False
+    save_plan(conn, get_week_start(), json.loads(row["plan_json"]))
+    return True
 
 
 def ask_claude(prompt):

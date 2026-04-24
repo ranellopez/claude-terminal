@@ -252,3 +252,92 @@ def test_add_and_retrieve_custom_meal():
     all_meals = get_all_meals(conn)
     names = [m["name"] for m in all_meals]
     assert "My Special Bowl" in names
+
+
+from planner import QUESTIONS, get_all_plans, get_plan_by_id, update_plan_by_id, delete_plan_by_id, restore_plan_by_id
+
+
+def test_questions_has_8_items():
+    assert len(QUESTIONS) == 8
+    for q in QUESTIONS:
+        assert "key" in q
+        assert "question" in q
+        assert "why" in q
+        assert "type" in q
+
+
+def test_get_all_plans_empty():
+    conn = make_conn()
+    init_db(conn)
+    assert get_all_plans(conn) == []
+
+
+def test_get_all_plans_returns_saved_plan():
+    conn = make_conn()
+    init_db(conn)
+    save_profile(conn, SAMPLE_PROFILE)
+    plan = generate_plan_library(SAMPLE_PROFILE, conn)
+    save_plan(conn, "2026-04-20", plan)
+    plans = get_all_plans(conn)
+    assert len(plans) == 1
+    assert plans[0]["week_start"] == "2026-04-20"
+    assert "gym_days" in plans[0]
+    assert "goal" in plans[0]
+
+
+def test_get_plan_by_id_returns_plan():
+    conn = make_conn()
+    init_db(conn)
+    save_profile(conn, SAMPLE_PROFILE)
+    plan = generate_plan_library(SAMPLE_PROFILE, conn)
+    save_plan(conn, "2026-04-20", plan)
+    plans = get_all_plans(conn)
+    plan_id = plans[0]["id"]
+    result = get_plan_by_id(conn, plan_id)
+    assert result is not None
+    assert "plan" in result
+    assert "Mon" in result["plan"]
+
+
+def test_get_plan_by_id_missing_returns_none():
+    conn = make_conn()
+    init_db(conn)
+    assert get_plan_by_id(conn, 99999) is None
+
+
+def test_update_plan_by_id():
+    conn = make_conn()
+    init_db(conn)
+    save_profile(conn, SAMPLE_PROFILE)
+    plan = generate_plan_library(SAMPLE_PROFILE, conn)
+    save_plan(conn, "2026-04-20", plan)
+    plan_id = get_all_plans(conn)[0]["id"]
+    plan["Mon"]["exercises"] = [{"name": "Modified", "sets": 1, "reps": "5"}]
+    update_plan_by_id(conn, plan_id, plan)
+    updated = get_plan_by_id(conn, plan_id)
+    assert updated["plan"]["Mon"]["exercises"][0]["name"] == "Modified"
+
+
+def test_delete_plan_by_id():
+    conn = make_conn()
+    init_db(conn)
+    save_profile(conn, SAMPLE_PROFILE)
+    plan = generate_plan_library(SAMPLE_PROFILE, conn)
+    save_plan(conn, "2026-04-20", plan)
+    plan_id = get_all_plans(conn)[0]["id"]
+    delete_plan_by_id(conn, plan_id)
+    assert get_plan_by_id(conn, plan_id) is None
+    assert get_all_plans(conn) == []
+
+
+def test_restore_plan_by_id():
+    conn = make_conn()
+    init_db(conn)
+    save_profile(conn, SAMPLE_PROFILE)
+    plan = generate_plan_library(SAMPLE_PROFILE, conn)
+    save_plan(conn, "2020-01-06", plan)
+    plan_id = get_all_plans(conn)[0]["id"]
+    ok = restore_plan_by_id(conn, plan_id)
+    assert ok is True
+    current = load_current_plan(conn)
+    assert current is not None
