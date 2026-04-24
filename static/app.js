@@ -13,6 +13,15 @@ const state = {
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+function esc(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // ── API helpers ───────────────────────────────────────────────────────────────
 async function api(method, path, body) {
   const opts = { method, headers: {} };
@@ -20,8 +29,13 @@ async function api(method, path, body) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
   }
-  const res = await fetch(path, opts);
-  return res.json();
+  try {
+    const res = await fetch(path, opts);
+    return res.json();
+  } catch (err) {
+    console.error("API error:", method, path, err);
+    return { error: String(err) };
+  }
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -57,7 +71,7 @@ function planCardHTML(p) {
   const isCurrent = p.is_current;
   const badge = isCurrent ? '<span class="current-badge">Current</span>' : "";
   const dateStr = new Date(p.week_start + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  const meta = `${p.gym_days} gym days · ${(p.goal || "").replace("_", " ")} · ${p.daily_calorie_target} kcal · ${p.protein_target_g}g protein`;
+  const meta = `${p.gym_days} gym days · ${esc((p.goal || "").replace(/_/g, " "))} · ${p.daily_calorie_target} kcal · ${p.protein_target_g}g protein`;
   const restoreBtn = !isCurrent ? `<button class="btn btn-restore" data-action="restore" data-id="${p.id}">Restore</button>` : "";
   const deleteBtn = !isCurrent ? `<button class="btn btn-delete" data-action="delete" data-id="${p.id}">Delete</button>` : "";
   return `
@@ -79,7 +93,9 @@ function planCardHTML(p) {
 }
 
 function bindPlanCard(p) {
-  document.querySelectorAll(`[data-id="${p.id}"]`).forEach(btn => {
+  const card = document.getElementById(`card-${p.id}`);
+  if (!card) return;
+  card.querySelectorAll("[data-action]").forEach(btn => {
     btn.addEventListener("click", async () => {
       const action = btn.dataset.action;
       if (action === "view") toggleView(p.id);
@@ -110,6 +126,7 @@ async function toggleView(planId) {
   btn.textContent = "Hide ▴";
   const planMeta = state.plans.find(p => p.id === planId);
   const full = await api("GET", `/api/plans/${planId}`);
+  if (state.openPlanId !== planId) return;
   if (!state.viewDay[planId]) state.viewDay[planId] = "Mon";
   viewEl.innerHTML = buildViewHTML(planMeta, full, state.viewDay[planId]);
   viewEl.classList.add("open");
@@ -156,21 +173,21 @@ function buildDayViewHTML(day, planMeta) {
     activityHTML = `
       <div class="section-label">💪 Workout</div>
       ${(day.exercises || []).map(e =>
-        `<div class="exercise-row"><span>${e.name}</span><span class="exercise-sets">${e.sets} sets × ${e.reps}</span></div>`
+        `<div class="exercise-row"><span>${esc(e.name)}</span><span class="exercise-sets">${esc(String(e.sets))} sets × ${esc(e.reps)}</span></div>`
       ).join("")}`;
   } else if (day.type === "rest") {
     activityHTML = `
       <div class="section-label">🧘 Rest Activity</div>
-      <div style="font-size:14px;padding:4px 0;">${day.activity || "–"}</div>`;
+      <div style="font-size:14px;padding:4px 0;">${esc(day.activity || "–")}</div>`;
   } else if (day.type === "meal_prep") {
     activityHTML = `
       <div class="section-label">📦 Meal Prep Tasks</div>
-      ${(day.prep_tasks || []).map(t => `<div class="prep-task">${t}</div>`).join("")}`;
+      ${(day.prep_tasks || []).map(t => `<div class="prep-task">${esc(t)}</div>`).join("")}`;
   }
 
   const mealMacros = { breakfast: "450kcal · 30g", lunch: "520kcal · 45g", dinner: "480kcal · 40g", snack: "180kcal · 15g" };
   const mealsHTML = ["breakfast", "lunch", "dinner", "snack"].map(type => {
-    const name = (day.meals || {})[type] || "–";
+    const name = esc((day.meals || {})[type] || "–");
     return `<div class="meal-row">
       <span class="meal-type-lbl">${type.charAt(0).toUpperCase() + type.slice(1)}</span>
       <span style="flex:1">${name}</span>
