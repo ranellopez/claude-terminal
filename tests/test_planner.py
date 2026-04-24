@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, ".")
 import pytest
 import json as json_lib
-from planner import init_db, get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES, save_profile, load_profile, generate_plan_library, save_plan, load_current_plan, ask_claude, generate_plan, DAYS, format_week_view, load_check_offs, mark_done, check_meal, export_markdown, export_json, add_custom_item, get_all_meals
+from planner import init_db, get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES, save_profile, load_profile, generate_plan_library, save_plan, load_current_plan, ask_claude, generate_plan, DAYS, format_week_view, load_check_offs, mark_done, check_meal, export_markdown, export_json, add_custom_item, get_all_meals, QUESTIONS, get_all_plans, get_plan_by_id, update_plan_by_id, delete_plan_by_id, restore_plan_by_id
 
 
 def make_conn():
@@ -254,9 +254,6 @@ def test_add_and_retrieve_custom_meal():
     assert "My Special Bowl" in names
 
 
-from planner import QUESTIONS, get_all_plans, get_plan_by_id, update_plan_by_id, delete_plan_by_id, restore_plan_by_id
-
-
 def test_questions_has_8_items():
     assert len(QUESTIONS) == 8
     for q in QUESTIONS:
@@ -313,7 +310,8 @@ def test_update_plan_by_id():
     save_plan(conn, "2026-04-20", plan)
     plan_id = get_all_plans(conn)[0]["id"]
     plan["Mon"]["exercises"] = [{"name": "Modified", "sets": 1, "reps": "5"}]
-    update_plan_by_id(conn, plan_id, plan)
+    ok = update_plan_by_id(conn, plan_id, plan)
+    assert ok is True
     updated = get_plan_by_id(conn, plan_id)
     assert updated["plan"]["Mon"]["exercises"][0]["name"] == "Modified"
 
@@ -325,7 +323,8 @@ def test_delete_plan_by_id():
     plan = generate_plan_library(SAMPLE_PROFILE, conn)
     save_plan(conn, "2026-04-20", plan)
     plan_id = get_all_plans(conn)[0]["id"]
-    delete_plan_by_id(conn, plan_id)
+    ok = delete_plan_by_id(conn, plan_id)
+    assert ok is True
     assert get_plan_by_id(conn, plan_id) is None
     assert get_all_plans(conn) == []
 
@@ -341,3 +340,17 @@ def test_restore_plan_by_id():
     assert ok is True
     current = load_current_plan(conn)
     assert current is not None
+
+
+def test_update_plan_by_id_missing_returns_false():
+    conn = make_conn()
+    init_db(conn)
+    ok = update_plan_by_id(conn, 99999, {})
+    assert ok is False
+
+
+def test_delete_plan_by_id_missing_returns_false():
+    conn = make_conn()
+    init_db(conn)
+    ok = delete_plan_by_id(conn, 99999)
+    assert ok is False

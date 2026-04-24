@@ -368,16 +368,18 @@ def get_plan_by_id(conn, plan_id):
 
 
 def update_plan_by_id(conn, plan_id, plan):
-    conn.execute(
+    result = conn.execute(
         "UPDATE weekly_plans SET plan_json=? WHERE id=?",
         (json.dumps(plan), plan_id)
     )
     conn.commit()
+    return result.rowcount > 0
 
 
 def delete_plan_by_id(conn, plan_id):
-    conn.execute("DELETE FROM weekly_plans WHERE id=?", (plan_id,))
+    result = conn.execute("DELETE FROM weekly_plans WHERE id=?", (plan_id,))
     conn.commit()
+    return result.rowcount > 0
 
 
 def restore_plan_by_id(conn, plan_id):
