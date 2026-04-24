@@ -51,6 +51,8 @@ class PlannerHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = self.path.split("?")[0]
         body = self._read_body()
+        if body is None:
+            return
 
         if path == "/api/plans/generate":
             conn = planner.get_db()
@@ -83,6 +85,8 @@ class PlannerHandler(BaseHTTPRequestHandler):
     def do_PUT(self):
         path = self.path.split("?")[0]
         body = self._read_body()
+        if body is None:
+            return
 
         if path == "/api/profile":
             conn = planner.get_db()
@@ -96,6 +100,9 @@ class PlannerHandler(BaseHTTPRequestHandler):
 
         elif re.fullmatch(r"/api/plans/\d+", path):
             plan_id = int(path.split("/")[-1])
+            if "plan" not in body:
+                self._json(400, {"error": "missing 'plan' key in request body"})
+                return
             conn = planner.get_db()
             try:
                 ok = planner.update_plan_by_id(conn, plan_id, body["plan"])
@@ -130,7 +137,14 @@ class PlannerHandler(BaseHTTPRequestHandler):
 
     def _read_body(self):
         length = int(self.headers.get("Content-Length", 0))
-        return json.loads(self.rfile.read(length)) if length else {}
+        if not length:
+            return {}
+        raw = self.rfile.read(length)
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            self._json(400, {"error": "invalid JSON"})
+            return None
 
     def _json(self, status, data):
         body = json.dumps(data).encode()
@@ -145,6 +159,10 @@ class PlannerHandler(BaseHTTPRequestHandler):
         if path in ("/", ""):
             path = "/index.html"
         file_path = STATIC_DIR / path.lstrip("/")
+        if not file_path.resolve().is_relative_to(STATIC_DIR.resolve()):
+            self.send_response(403)
+            self.end_headers()
+            return
         if not file_path.exists() or not file_path.is_file():
             self.send_response(404)
             self.end_headers()
@@ -155,7 +173,12 @@ class PlannerHandler(BaseHTTPRequestHandler):
             ".js": "application/javascript",
         }
         ct = content_types.get(file_path.suffix, "application/octet-stream")
-        body = file_path.read_bytes()
+        try:
+            body = file_path.read_bytes()
+        except OSError:
+            self.send_response(500)
+            self.end_headers()
+            return
         self.send_response(200)
         self.send_header("Content-Type", ct)
         self.send_header("Content-Length", len(body))
