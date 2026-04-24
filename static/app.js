@@ -236,9 +236,204 @@ async function refreshPlans() {
   renderPlans();
 }
 
-// ── Placeholders for Tasks 6 and 7 (to be filled in next tasks) ───────────────
-function openEdit(planId) { toast("Edit coming in next task"); }
+// ── Placeholders for Task 7 (to be filled in next task) ──────────────────────
 function renderWizard() {}
+
+// ── Edit Modal ────────────────────────────────────────────────────────────────
+async function openEdit(planId) {
+  const full = await api("GET", `/api/plans/${planId}`);
+  if (full.error) { toast("Could not load plan"); return; }
+  state.editPlan = { id: planId, plan: JSON.parse(JSON.stringify(full.plan)) };
+  state.editDay = "Mon";
+  renderModal();
+  document.getElementById("modal-overlay").classList.remove("hidden");
+}
+
+function closeModal() {
+  document.getElementById("modal-overlay").classList.add("hidden");
+  state.editPlan = null;
+}
+
+function renderModal() {
+  if (!state.editPlan) return;
+  const tabs = DAYS.map(d =>
+    `<button class="day-tab${d === state.editDay ? " active" : ""}" data-day="${d}">${d}</button>`
+  ).join("");
+  document.getElementById("modal-day-tabs").innerHTML = tabs;
+  document.getElementById("modal-day-tabs").querySelectorAll(".day-tab").forEach(t => {
+    t.addEventListener("click", () => {
+      collectEditDay();
+      state.editDay = t.dataset.day;
+      renderModal();
+    });
+  });
+  document.getElementById("modal-body").innerHTML = buildEditDayHTML(
+    state.editPlan.plan[state.editDay] || {}
+  );
+  bindEditBody();
+}
+
+function buildEditDayHTML(day) {
+  const planMeta = state.plans.find(p => p.id === state.editPlan.id) || {};
+  const kcal = planMeta.daily_calorie_target || 2000;
+  const prot = planMeta.protein_target_g || 150;
+
+  let activityHTML = "";
+  if (day.type === "gym") {
+    const exRows = (day.exercises || []).map((e, i) => `
+      <div class="field-row" data-ex="${i}">
+        <input class="input input-name ex-name" value="${esc(e.name)}" placeholder="Exercise name">
+        <input class="input input-num ex-sets" value="${esc(String(e.sets))}" placeholder="Sets">
+        <input class="input input-num ex-reps" value="${esc(e.reps)}" placeholder="Reps">
+        <button class="del-btn" data-del-ex="${i}">×</button>
+      </div>`).join("");
+    activityHTML = `
+      <div class="field-group">
+        <div class="section-label">💪 Exercises</div>
+        <div id="ex-list">${exRows}</div>
+        <button class="btn btn-add" id="add-ex-btn">+ Add Exercise</button>
+      </div>`;
+  } else if (day.type === "rest") {
+    activityHTML = `
+      <div class="field-group">
+        <div class="section-label">🧘 Rest Activity</div>
+        <input class="input input-wide" id="rest-activity" value="${esc(day.activity || "")}">
+      </div>`;
+  } else if (day.type === "meal_prep") {
+    const taskRows = (day.prep_tasks || []).map((t, i) => `
+      <div class="field-row" data-task="${i}">
+        <input class="input input-name task-text" value="${esc(t)}">
+        <button class="del-btn" data-del-task="${i}">×</button>
+      </div>`).join("");
+    activityHTML = `
+      <div class="field-group">
+        <div class="section-label">📦 Meal Prep Tasks</div>
+        <div id="task-list">${taskRows}</div>
+        <button class="btn btn-add" id="add-task-btn">+ Add Task</button>
+      </div>`;
+  }
+
+  const meals = day.meals || {};
+  const mealRows = ["breakfast", "lunch", "dinner", "snack"].map(type => `
+    <div class="field-row">
+      <span class="meal-type-lbl" style="width:75px;flex-shrink:0;font-size:11px;color:#9ca3af;">${type.charAt(0).toUpperCase() + type.slice(1)}</span>
+      <input class="input input-name meal-name" data-meal="${type}" value="${esc(meals[type] || "")}">
+    </div>`).join("");
+
+  return `
+    <div class="field-group">
+      <div class="section-label">📊 Daily Targets</div>
+      <div class="targets-row">
+        <div>
+          <div class="field-label">Calories (kcal)</div>
+          <input class="input input-wide" id="edit-kcal" value="${kcal}">
+        </div>
+        <div>
+          <div class="field-label">Protein (g)</div>
+          <input class="input input-wide" id="edit-prot" value="${prot}">
+        </div>
+      </div>
+    </div>
+    ${activityHTML}
+    <div class="field-group">
+      <div class="section-label">🍽️ Meals</div>
+      ${mealRows}
+    </div>`;
+}
+
+function bindEditBody() {
+  const day = state.editPlan.plan[state.editDay];
+
+  const addExBtn = document.getElementById("add-ex-btn");
+  if (addExBtn) {
+    addExBtn.addEventListener("click", () => {
+      collectEditDay();
+      const d = state.editPlan.plan[state.editDay];
+      d.exercises.push({ name: "", sets: 3, reps: "10-12" });
+      renderModal();
+    });
+  }
+
+  document.querySelectorAll("[data-del-ex]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      collectEditDay();
+      const i = parseInt(btn.dataset.delEx);
+      state.editPlan.plan[state.editDay].exercises.splice(i, 1);
+      renderModal();
+    });
+  });
+
+  const addTaskBtn = document.getElementById("add-task-btn");
+  if (addTaskBtn) {
+    addTaskBtn.addEventListener("click", () => {
+      collectEditDay();
+      state.editPlan.plan[state.editDay].prep_tasks.push("");
+      renderModal();
+    });
+  }
+
+  document.querySelectorAll("[data-del-task]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      collectEditDay();
+      const i = parseInt(btn.dataset.delTask);
+      state.editPlan.plan[state.editDay].prep_tasks.splice(i, 1);
+      renderModal();
+    });
+  });
+}
+
+function collectEditDay() {
+  const day = state.editPlan.plan[state.editDay];
+  if (!day) return;
+
+  document.querySelectorAll(".meal-name").forEach(input => {
+    day.meals[input.dataset.meal] = input.value;
+  });
+
+  if (day.type === "gym") {
+    document.querySelectorAll("[data-ex]").forEach(row => {
+      const i = parseInt(row.dataset.ex);
+      if (day.exercises[i]) {
+        day.exercises[i].name = row.querySelector(".ex-name").value;
+        day.exercises[i].sets = parseInt(row.querySelector(".ex-sets").value) || 3;
+        day.exercises[i].reps = row.querySelector(".ex-reps").value;
+      }
+    });
+  }
+
+  const restInput = document.getElementById("rest-activity");
+  if (restInput) day.activity = restInput.value;
+
+  if (day.type === "meal_prep") {
+    document.querySelectorAll(".task-text").forEach((input, i) => {
+      if (day.prep_tasks[i] !== undefined) day.prep_tasks[i] = input.value;
+    });
+  }
+}
+
+async function saveEdit() {
+  collectEditDay();
+  const res = await api("PUT", `/api/plans/${state.editPlan.id}`, { plan: state.editPlan.plan });
+  if (res.ok) {
+    toast("Changes saved!", "success");
+    const savedId = state.editPlan.id;
+    closeModal();
+    await refreshPlans();
+    if (state.openPlanId === savedId) {
+      await toggleView(savedId);
+    }
+  } else {
+    toast("Save failed: " + (res.error || "unknown error"));
+  }
+}
+
+// Modal button listeners
+document.getElementById("modal-close").addEventListener("click", closeModal);
+document.getElementById("modal-cancel").addEventListener("click", closeModal);
+document.getElementById("modal-save").addEventListener("click", saveEdit);
+document.getElementById("modal-overlay").addEventListener("click", e => {
+  if (e.target === document.getElementById("modal-overlay")) closeModal();
+});
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
