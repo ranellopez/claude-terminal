@@ -263,5 +263,27 @@ def post_chat(body: ChatIn):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/chat/generate")
+def post_chat_generate(body: ChatIn, conn=Depends(get_db)):
+    base_profile = _json.dumps(body.profile, indent=2)
+    system = GYMBOT_EXTRACT_PROMPT.format(base_profile=base_profile)
+    messages = [{"role": m.role, "content": m.content} for m in body.messages]
+    messages.append({"role": "user", "content": "Extract the complete profile from our conversation above."})
+
+    try:
+        raw = planner.chat_with_claude(messages, system)
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        profile = _json.loads(raw[start:end])
+    except Exception:
+        profile = body.profile
+
+    if not profile:
+        raise HTTPException(status_code=400, detail="Could not extract profile from conversation")
+
+    plan = planner.generate_plan(profile, conn)
+    return {"ok": True, "plan": plan}
+
+
 # --- Static files (must be last) ---
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

@@ -262,6 +262,37 @@ class TestPlannerAPI(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(data["ready"])
 
+    def test_24_post_chat_generate(self):
+        import json as _json
+        conversation = [
+            {"role": "assistant", "content": "Hey! I'm GymBot 💪"},
+            {"role": "user", "content": "I want to build muscle, 5 days a week with dumbbells, intermediate level"},
+            {"role": "assistant", "content": "Great! Which days work for you?"},
+            {"role": "user", "content": "Mon through Fri, meal prep on Sunday, no dairy"},
+        ]
+        extracted = _json.dumps({
+            "goal": "build_muscle",
+            "gym_days": "Mon,Tue,Wed,Thu,Fri",
+            "rest_days": "Sat,Sun",
+            "meal_prep_day": "Sun",
+            "fitness_level": "intermediate",
+            "equipment": "dumbbells",
+            "dietary_preference": "none",
+            "allergies": "dairy",
+            "daily_calorie_target": 2800,
+            "protein_target_g": 180,
+        })
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test"}), \
+             patch("planner.chat_with_claude", return_value=extracted), \
+             patch("planner.enhance_plan_with_ai", side_effect=lambda p, plan: plan):
+            status, data = self._req("POST", "/api/chat/generate", {
+                "messages": conversation,
+                "profile": SAMPLE_PROFILE,
+            })
+        self.assertEqual(status, 200)
+        self.assertTrue(data["ok"])
+        self.assertIn("Mon", data["plan"])
+
 
 if __name__ == "__main__":
     unittest.main()
