@@ -220,6 +220,25 @@ class TestPlannerAPI(unittest.TestCase):
         _, items_after = self._req("GET", "/api/custom-items")
         self.assertNotIn("Delete Me", [i["data"]["name"] for i in items_after])
 
+    def test_21_post_meal_check(self):
+        with patch("planner.ask_claude", return_value="Verdict: on track. ~520 kcal, 45g protein. Great protein source. Add more vegetables. Try a side salad next."):
+            status, data = self._req("POST", "/api/meal-check", {"food_desc": "chicken breast and brown rice"})
+        self.assertEqual(status, 200)
+        self.assertIn("feedback", data)
+        self.assertIsInstance(data["feedback"], str)
+        self.assertTrue(len(data["feedback"]) > 0)
+
+    def test_22_post_meal_check_no_profile(self):
+        import sqlite3 as _sqlite3
+        conn = _sqlite3.connect(planner.DB_PATH)
+        conn.execute("DELETE FROM profile")
+        conn.commit()
+        conn.close()
+        status, _ = self._req("POST", "/api/meal-check", {"food_desc": "pizza"})
+        self.assertEqual(status, 400)
+        # restore profile for any tests that follow
+        self._req("PUT", "/api/profile", SAMPLE_PROFILE)
+
 
 if __name__ == "__main__":
     unittest.main()

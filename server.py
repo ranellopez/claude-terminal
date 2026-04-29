@@ -178,5 +178,16 @@ def delete_custom_item(item_id: int, conn=Depends(get_db)):
     return {"ok": True}
 
 
+# --- Meal checker ---
+
+@app.post("/api/meal-check")
+def post_meal_check(body: MealCheckIn, conn=Depends(get_db)):
+    profile = planner.load_profile(conn)
+    if profile is None:
+        raise HTTPException(status_code=400, detail="Profile not configured")
+    feedback = planner.check_meal(profile, body.food_desc, conn)
+    return {"feedback": feedback}
+
+
 # --- Static files (must be last) ---
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
