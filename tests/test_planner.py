@@ -405,3 +405,21 @@ def test_delete_custom_item():
     ok = delete_custom_item(conn, item_id)
     assert ok is True
     assert list_custom_items(conn) == []
+
+
+def test_chat_with_claude_calls_api_with_messages():
+    from planner import chat_with_claude
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(text='{"message": "What is your goal?", "ready": false}')]
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+        mock_client.messages.create.return_value = mock_response
+        result = chat_with_claude(
+            [{"role": "user", "content": "Hi"}],
+            "You are GymBot"
+        )
+    assert result == '{"message": "What is your goal?", "ready": false}'
+    call_kwargs = mock_client.messages.create.call_args[1]
+    assert call_kwargs["system"] == "You are GymBot"
+    assert call_kwargs["messages"] == [{"role": "user", "content": "Hi"}]

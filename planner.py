@@ -425,6 +425,17 @@ def ask_claude(prompt):
     return response.content[0].text
 
 
+def chat_with_claude(messages, system_prompt):
+    client = anthropic.Anthropic()
+    response = client.messages.create(
+        model="claude-opus-4-7",
+        max_tokens=1024,
+        system=system_prompt,
+        messages=messages,
+    )
+    return response.content[0].text
+
+
 def enhance_plan_with_ai(profile, plan):
     prompt = f"""You are a fitness and nutrition expert. Improve this weekly plan for someone with:
 - Goal: {profile['goal']}
