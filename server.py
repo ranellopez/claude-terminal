@@ -1,7 +1,8 @@
 import os
 import sys
+import json as _json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -56,6 +57,54 @@ class CustomItemIn(BaseModel):
 
 class MealCheckIn(BaseModel):
     food_desc: str
+
+
+class ChatMessageIn(BaseModel):
+    role: str
+    content: str
+
+
+class ChatIn(BaseModel):
+    messages: List[ChatMessageIn]
+    profile: dict = {}
+
+
+GYMBOT_SYSTEM_PROMPT = """You are GymBot, a friendly and direct AI fitness coach. Your job is to have a natural conversation to gather the user's preferences, then offer to generate their weekly fitness and meal plan.
+
+Current user profile:
+{profile_summary}
+
+Rules:
+- Reference the user's existing profile naturally — acknowledge what you already know
+- Ask follow-up questions ONE AT A TIME — never ask multiple questions in a single message
+- Gather all of the following if not already known: fitness goal, gym days (which specific days), meal prep day, fitness level (beginner/intermediate/advanced), available equipment, dietary preference, food allergies, daily calorie target, daily protein target
+- Keep responses concise and encouraging
+- When you have gathered enough information for a complete 7-day plan, set ready to true
+
+CRITICAL: Always respond with ONLY valid JSON — no preamble, no markdown:
+{{"message": "your conversational response here", "ready": false}}
+
+When ready to generate:
+{{"message": "Perfect — I\\'ve got everything I need! [brief summary]. Ready to generate your plan? 🚀", "ready": true}}"""
+
+GYMBOT_EXTRACT_PROMPT = """Extract a complete fitness profile from the conversation. Fill any missing fields using the base profile provided. Return ONLY valid JSON with no other text.
+
+Base profile:
+{base_profile}
+
+Required output format (all fields mandatory):
+{{
+  "goal": "lose_weight|build_muscle|maintain|endurance",
+  "gym_days": "Mon,Wed,Fri",
+  "rest_days": "Tue,Thu,Sat,Sun",
+  "meal_prep_day": "Sun",
+  "fitness_level": "beginner|intermediate|advanced",
+  "equipment": "dumbbells,barbell",
+  "dietary_preference": "none|vegetarian|vegan|gluten-free",
+  "allergies": "none",
+  "daily_calorie_target": 2800,
+  "protein_target_g": 180
+}}"""
 
 
 # --- DB dependency ---
@@ -187,6 +236,31 @@ def post_meal_check(body: MealCheckIn, conn=Depends(get_db)):
         raise HTTPException(status_code=400, detail="Profile not configured")
     feedback = planner.check_meal(profile, body.food_desc, conn)
     return {"feedback": feedback}
+
+
+# --- GymBot chat ---
+
+@app.post("/api/chat")
+def post_chat(body: ChatIn):
+    profile_summary = ", ".join(
+        f"{k}: {v}" for k, v in body.profile.items() if v and k != "id"
+    ) or "No profile set yet"
+    system = GYMBOT_SYSTEM_PROMPT.format(profile_summary=profile_summary)
+
+    messages = [{"role": m.role, "content": m.content} for m in body.messages]
+    if not messages:
+        messages = [{"role": "user", "content": "Hello"}]
+        system += "\n\nThe user just opened GymBot. Greet them warmly, introduce yourself, and reference their existing profile if they have one. Ask your first question."
+
+    try:
+        raw = planner.chat_with_claude(messages, system)
+        try:
+            parsed = _json.loads(raw)
+            return {"message": parsed.get("message", raw), "ready": bool(parsed.get("ready", False))}
+        except (_json.JSONDecodeError, ValueError):
+            return {"message": raw, "ready": False}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Static files (must be last) ---

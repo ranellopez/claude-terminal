@@ -240,6 +240,28 @@ class TestPlannerAPI(unittest.TestCase):
         # restore profile for any tests that follow
         self._req("PUT", "/api/profile", SAMPLE_PROFILE)
 
+    def test_23_post_chat(self):
+        with patch("planner.chat_with_claude", return_value='{"message": "What is your fitness goal?", "ready": false}'):
+            status, data = self._req("POST", "/api/chat", {
+                "messages": [{"role": "user", "content": "Hi"}],
+                "profile": SAMPLE_PROFILE,
+            })
+        self.assertEqual(status, 200)
+        self.assertIn("message", data)
+        self.assertIn("ready", data)
+        self.assertIsInstance(data["message"], str)
+        self.assertIsInstance(data["ready"], bool)
+        self.assertFalse(data["ready"])
+
+    def test_23b_post_chat_ready(self):
+        with patch("planner.chat_with_claude", return_value='{"message": "I have everything, ready to generate!", "ready": true}'):
+            status, data = self._req("POST", "/api/chat", {
+                "messages": [{"role": "user", "content": "No dairy, Sunday prep"}],
+                "profile": SAMPLE_PROFILE,
+            })
+        self.assertEqual(status, 200)
+        self.assertTrue(data["ready"])
+
 
 if __name__ == "__main__":
     unittest.main()
