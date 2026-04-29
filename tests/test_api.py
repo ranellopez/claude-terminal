@@ -1,14 +1,13 @@
 import sys
 import os
-import threading
-import http.client
-import json
 import tempfile
 import unittest
+from unittest.mock import patch
+from fastapi.testclient import TestClient
 
 sys.path.insert(0, ".")
 import planner
-from server import make_server
+from server import app
 
 SAMPLE_PROFILE = {
     "goal": "build_muscle",
@@ -29,27 +28,23 @@ class TestPlannerAPI(unittest.TestCase):
     def setUpClass(cls):
         cls.db_fd, cls.db_path = tempfile.mkstemp(suffix=".db")
         planner.DB_PATH = cls.db_path
-        cls.server = make_server(port=8181)
-        cls.thread = threading.Thread(target=cls.server.serve_forever)
-        cls.thread.daemon = True
-        cls.thread.start()
+        cls.client = TestClient(app)
 
     @classmethod
     def tearDownClass(cls):
-        cls.server.shutdown()
         planner.DB_PATH = "planner.db"
         os.close(cls.db_fd)
         os.unlink(cls.db_path)
 
-    def _req(self, method, path, body=None):
-        conn = http.client.HTTPConnection("localhost", 8181, timeout=5)
-        headers = {"Content-Type": "application/json"} if body is not None else {}
-        encoded = json.dumps(body).encode() if body is not None else None
-        conn.request(method, path, encoded, headers)
-        resp = conn.getresponse()
-        data = json.loads(resp.read())
-        conn.close()
-        return resp.status, data
+    def _req(self, method, path, body=None, params=None):
+        fn = getattr(self.client, method.lower())
+        kwargs = {}
+        if body is not None:
+            kwargs["json"] = body
+        if params is not None:
+            kwargs["params"] = params
+        resp = fn(path, **kwargs)
+        return resp.status_code, resp.json()
 
     def test_01_get_questions_returns_8(self):
         status, data = self._req("GET", "/api/questions")
@@ -79,7 +74,9 @@ class TestPlannerAPI(unittest.TestCase):
         self.assertEqual(data, [])
 
     def test_06_generate_plan(self):
-        status, data = self._req("POST", "/api/plans/generate", {})
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test"}), \
+             patch("planner.enhance_plan_with_ai", side_effect=lambda p, plan: plan):
+            status, data = self._req("POST", "/api/plans/generate")
         self.assertEqual(status, 200)
         self.assertTrue(data["ok"])
         self.assertIn("Mon", data["plan"])
@@ -88,10 +85,9 @@ class TestPlannerAPI(unittest.TestCase):
         status, data = self._req("GET", "/api/plans")
         self.assertEqual(status, 200)
         self.assertGreater(len(data), 0)
-        plan = data[0]
-        self.assertIn("week_start", plan)
-        self.assertIn("gym_days", plan)
-        self.assertIn("goal", plan)
+        self.assertIn("week_start", data[0])
+        self.assertIn("gym_days", data[0])
+        self.assertIn("goal", data[0])
 
     def test_08_get_plan_by_id(self):
         _, plans = self._req("GET", "/api/plans")
@@ -104,14 +100,12 @@ class TestPlannerAPI(unittest.TestCase):
     def test_09_get_plan_missing(self):
         status, data = self._req("GET", "/api/plans/99999")
         self.assertEqual(status, 404)
-        self.assertIn("error", data)
 
     def test_10_update_plan(self):
         _, plans = self._req("GET", "/api/plans")
         plan_id = plans[0]["id"]
         _, plan_data = self._req("GET", f"/api/plans/{plan_id}")
         plan = plan_data["plan"]
-        # find a gym day and modify its first exercise name
         for day, entry in plan.items():
             if entry["type"] == "gym":
                 plan[day]["exercises"][0]["name"] = "Test Exercise"
@@ -125,24 +119,23 @@ class TestPlannerAPI(unittest.TestCase):
     def test_11_restore_plan(self):
         _, plans = self._req("GET", "/api/plans")
         plan_id = plans[0]["id"]
-        status, data = self._req("POST", f"/api/plans/{plan_id}/restore", {})
+        status, data = self._req("POST", f"/api/plans/{plan_id}/restore")
         self.assertEqual(status, 200)
         self.assertTrue(data["ok"])
-        # verify the restored plan is now current
         _, updated_plans = self._req("GET", "/api/plans")
         current = [p for p in updated_plans if p["is_current"]]
         self.assertTrue(len(current) > 0)
 
     def test_12_delete_plan(self):
-        # generate a second plan first so we can delete without removing the only one
-        self._req("POST", "/api/plans/generate", {})
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test"}), \
+             patch("planner.enhance_plan_with_ai", side_effect=lambda p, plan: plan):
+            self._req("POST", "/api/plans/generate")
         _, plans_before = self._req("GET", "/api/plans")
         plan_id = plans_before[-1]["id"]
         status, _ = self._req("DELETE", f"/api/plans/{plan_id}")
         self.assertEqual(status, 200)
         _, plans_after = self._req("GET", "/api/plans")
-        ids_after = [p["id"] for p in plans_after]
-        self.assertNotIn(plan_id, ids_after)
+        self.assertNotIn(plan_id, [p["id"] for p in plans_after])
 
 
 if __name__ == "__main__":
