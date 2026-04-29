@@ -1,2 +1,5 @@
 anthropic>=0.40.0
 pytest
+fastapi
+uvicorn[standard]
+httpx
