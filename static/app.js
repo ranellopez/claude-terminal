@@ -743,12 +743,17 @@ async function generateFromChat() {
   const res = await api("POST", "/api/chat/generate", { messages: state.chatMessages, profile: state.profile });
   if (res.ok) {
     toast("Plan generated!", "success");
-    resetChat();
+    // Navigate first so renderChat doesn't re-trigger initChat while still on the chat tab
     document.querySelector('[data-tab="plans"]').click();
+    state.chatMessages = [];
+    state.chatReady = false;
+    state.chatLoading = false;
     await refreshPlans();
   } else {
     toast("Generation failed: " + (res.detail || res.error || "unknown"));
-    if (genBtn) { genBtn.disabled = false; genBtn.textContent = "Generate my plan ✨"; }
+    // Re-query button — renderChat may have replaced the DOM node since the await
+    const freshBtn = document.getElementById("chat-gen-btn");
+    if (freshBtn) { freshBtn.disabled = false; freshBtn.textContent = "Generate my plan ✨"; }
   }
 }
 
