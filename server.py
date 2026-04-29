@@ -136,5 +136,26 @@ def delete_plan(plan_id: int, conn=Depends(get_db)):
     return {"ok": True}
 
 
+# --- Check-offs ---
+
+@app.get("/api/check-offs")
+def get_check_offs(week_start: str, conn=Depends(get_db)):
+    return planner.load_check_offs(conn, week_start)
+
+
+@app.post("/api/check-offs")
+def post_check_off(body: CheckOffIn, conn=Depends(get_db)):
+    planner.mark_done(conn, body.week_start, body.day, body.item_type, body.item_name)
+    return {"ok": True}
+
+
+@app.delete("/api/check-offs/{check_off_id}")
+def delete_check_off(check_off_id: int, conn=Depends(get_db)):
+    ok = planner.delete_check_off(conn, check_off_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True}
+
+
 # --- Static files (must be last) ---
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

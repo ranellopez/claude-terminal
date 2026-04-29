@@ -138,6 +138,42 @@ class TestPlannerAPI(unittest.TestCase):
         _, plans_after = self._req("GET", "/api/plans")
         self.assertNotIn(plan_id, [p["id"] for p in plans_after])
 
+    def test_13_get_check_offs_empty(self):
+        status, data = self._req("GET", "/api/check-offs", params={"week_start": "2020-01-01"})
+        self.assertEqual(status, 200)
+        self.assertEqual(data, [])
+
+    def test_14_post_check_off(self):
+        status, data = self._req("POST", "/api/check-offs", {
+            "week_start": "2026-04-21",
+            "day": "Mon",
+            "item_type": "exercise",
+            "item_name": "Push-ups",
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(data["ok"])
+
+    def test_15_get_check_offs_after_post(self):
+        status, data = self._req("GET", "/api/check-offs", params={"week_start": "2026-04-21"})
+        self.assertEqual(status, 200)
+        names = [c["item_name"] for c in data]
+        self.assertIn("Push-ups", names)
+
+    def test_16_delete_check_off(self):
+        self._req("POST", "/api/check-offs", {
+            "week_start": "2026-04-21",
+            "day": "Tue",
+            "item_type": "exercise",
+            "item_name": "Squats",
+        })
+        _, check_offs = self._req("GET", "/api/check-offs", params={"week_start": "2026-04-21"})
+        target = next(c for c in check_offs if c["item_name"] == "Squats")
+        status, data = self._req("DELETE", f"/api/check-offs/{target['id']}")
+        self.assertEqual(status, 200)
+        self.assertTrue(data["ok"])
+        _, remaining = self._req("GET", "/api/check-offs", params={"week_start": "2026-04-21"})
+        self.assertNotIn("Squats", [c["item_name"] for c in remaining])
+
 
 if __name__ == "__main__":
     unittest.main()
