@@ -354,3 +354,54 @@ def test_delete_plan_by_id_missing_returns_false():
     init_db(conn)
     ok = delete_plan_by_id(conn, 99999)
     assert ok is False
+
+
+def test_delete_check_off():
+    conn = make_conn()
+    init_db(conn)
+    mark_done(conn, "2026-04-21", "Mon", "exercise", "Push-ups")
+    row = conn.execute("SELECT id FROM check_offs WHERE week_start='2026-04-21'").fetchone()
+    assert row is not None
+    from planner import delete_check_off
+    ok = delete_check_off(conn, row["id"])
+    assert ok is True
+    gone = conn.execute("SELECT * FROM check_offs WHERE id=?", (row["id"],)).fetchone()
+    assert gone is None
+
+
+def test_list_custom_items():
+    conn = make_conn()
+    init_db(conn)
+    from planner import list_custom_items
+    add_custom_item(conn, "meal", {
+        "name": "My Bowl",
+        "meal_type": "lunch",
+        "goal": ["maintain"],
+        "dietary": ["none"],
+        "protein_g": 20,
+        "calories": 300,
+    })
+    items = list_custom_items(conn)
+    assert len(items) == 1
+    assert items[0]["item_type"] == "meal"
+    assert items[0]["data"]["name"] == "My Bowl"
+    assert "id" in items[0]
+
+
+def test_delete_custom_item():
+    conn = make_conn()
+    init_db(conn)
+    from planner import list_custom_items, delete_custom_item
+    add_custom_item(conn, "exercise", {
+        "name": "Delete Me",
+        "goal": ["maintain"],
+        "equipment": ["bodyweight"],
+        "muscle_group": "core",
+        "sets": 3,
+        "reps": "10",
+    })
+    items = list_custom_items(conn)
+    item_id = items[0]["id"]
+    ok = delete_custom_item(conn, item_id)
+    assert ok is True
+    assert list_custom_items(conn) == []

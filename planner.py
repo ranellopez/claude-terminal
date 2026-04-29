@@ -392,6 +392,28 @@ def restore_plan_by_id(conn, plan_id):
     return True
 
 
+def delete_check_off(conn, check_off_id):
+    result = conn.execute("DELETE FROM check_offs WHERE id=?", (check_off_id,))
+    conn.commit()
+    return result.rowcount > 0
+
+
+def list_custom_items(conn):
+    rows = conn.execute(
+        "SELECT id, item_type, data_json FROM custom_items"
+    ).fetchall()
+    return [
+        {"id": r["id"], "item_type": r["item_type"], "data": json.loads(r["data_json"])}
+        for r in rows
+    ]
+
+
+def delete_custom_item(conn, item_id):
+    result = conn.execute("DELETE FROM custom_items WHERE id=?", (item_id,))
+    conn.commit()
+    return result.rowcount > 0
+
+
 def ask_claude(prompt):
     client = anthropic.Anthropic()
     response = client.messages.create(
