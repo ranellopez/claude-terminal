@@ -85,7 +85,7 @@ CRITICAL: Always respond with ONLY valid JSON — no preamble, no markdown:
 {{"message": "your conversational response here", "ready": false}}
 
 When ready to generate:
-{{"message": "Perfect — I\\'ve got everything I need! [brief summary]. Ready to generate your plan? 🚀", "ready": true}}"""
+{{"message": "Perfect — I've got everything I need! [brief summary]. Ready to generate your plan? 🚀", "ready": true}}"""
 
 GYMBOT_EXTRACT_PROMPT = """Extract a complete fitness profile from the conversation. Fill any missing fields using the base profile provided. Return ONLY valid JSON with no other text.
 
