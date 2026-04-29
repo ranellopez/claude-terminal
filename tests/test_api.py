@@ -27,7 +27,7 @@ class TestPlannerAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.db_fd, cls.db_path = tempfile.mkstemp(suffix=".db")
-        planner.DB_PATH = cls.db_path
+        planner.DB_PATH = cls.db_path  # must precede TestClient(app) — get_db reads DB_PATH at request time
         cls.client = TestClient(app)
 
     @classmethod
@@ -100,6 +100,7 @@ class TestPlannerAPI(unittest.TestCase):
     def test_09_get_plan_missing(self):
         status, data = self._req("GET", "/api/plans/99999")
         self.assertEqual(status, 404)
+        self.assertIn("detail", data)
 
     def test_10_update_plan(self):
         _, plans = self._req("GET", "/api/plans")
