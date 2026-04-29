@@ -157,5 +157,26 @@ def delete_check_off(check_off_id: int, conn=Depends(get_db)):
     return {"ok": True}
 
 
+# --- Custom items ---
+
+@app.get("/api/custom-items")
+def get_custom_items(conn=Depends(get_db)):
+    return planner.list_custom_items(conn)
+
+
+@app.post("/api/custom-items")
+def post_custom_item(body: CustomItemIn, conn=Depends(get_db)):
+    planner.add_custom_item(conn, body.item_type, body.data)
+    return {"ok": True}
+
+
+@app.delete("/api/custom-items/{item_id}")
+def delete_custom_item(item_id: int, conn=Depends(get_db)):
+    ok = planner.delete_custom_item(conn, item_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True}
+
+
 # --- Static files (must be last) ---
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

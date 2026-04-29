@@ -174,6 +174,52 @@ class TestPlannerAPI(unittest.TestCase):
         _, remaining = self._req("GET", "/api/check-offs", params={"week_start": "2026-04-21"})
         self.assertNotIn("Squats", [c["item_name"] for c in remaining])
 
+    def test_17_get_custom_items_empty(self):
+        status, data = self._req("GET", "/api/custom-items")
+        self.assertEqual(status, 200)
+        self.assertIsInstance(data, list)
+
+    def test_18_post_custom_meal(self):
+        status, data = self._req("POST", "/api/custom-items", {
+            "item_type": "meal",
+            "data": {
+                "name": "Test Bowl",
+                "meal_type": "lunch",
+                "goal": ["maintain"],
+                "dietary": ["none"],
+                "protein_g": 20,
+                "calories": 300,
+            },
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(data["ok"])
+
+    def test_19_get_custom_items_after_post(self):
+        status, data = self._req("GET", "/api/custom-items")
+        self.assertEqual(status, 200)
+        names = [i["data"]["name"] for i in data]
+        self.assertIn("Test Bowl", names)
+
+    def test_20_delete_custom_item(self):
+        self._req("POST", "/api/custom-items", {
+            "item_type": "exercise",
+            "data": {
+                "name": "Delete Me",
+                "goal": ["maintain"],
+                "equipment": ["bodyweight"],
+                "muscle_group": "core",
+                "sets": 3,
+                "reps": "10",
+            },
+        })
+        _, items = self._req("GET", "/api/custom-items")
+        target = next(i for i in items if i["data"]["name"] == "Delete Me")
+        status, data = self._req("DELETE", f"/api/custom-items/{target['id']}")
+        self.assertEqual(status, 200)
+        self.assertTrue(data["ok"])
+        _, items_after = self._req("GET", "/api/custom-items")
+        self.assertNotIn("Delete Me", [i["data"]["name"] for i in items_after])
+
 
 if __name__ == "__main__":
     unittest.main()
