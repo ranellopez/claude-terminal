@@ -270,11 +270,16 @@ def post_chat_generate(body: ChatIn, conn=Depends(get_db)):
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
     messages.append({"role": "user", "content": "Extract the complete profile from our conversation above."})
 
+    _required = {"goal", "gym_days", "rest_days", "meal_prep_day", "fitness_level",
+                 "equipment", "dietary_preference", "allergies", "daily_calorie_target", "protein_target_g"}
     try:
         raw = planner.chat_with_claude(messages, system)
         start = raw.find("{")
         end = raw.rfind("}") + 1
-        profile = _json.loads(raw[start:end])
+        parsed = _json.loads(raw[start:end])
+        if not parsed.keys() >= _required:
+            raise ValueError("incomplete extraction")
+        profile = parsed
     except Exception:
         profile = body.profile
 
