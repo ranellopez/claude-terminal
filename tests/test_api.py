@@ -221,6 +221,7 @@ class TestPlannerAPI(unittest.TestCase):
         self.assertNotIn("Delete Me", [i["data"]["name"] for i in items_after])
 
     def test_21_post_meal_check(self):
+        self._req("PUT", "/api/profile", SAMPLE_PROFILE)  # ensure profile exists if run in isolation
         with patch("planner.ask_claude", return_value="Verdict: on track. ~520 kcal, 45g protein. Great protein source. Add more vegetables. Try a side salad next."):
             status, data = self._req("POST", "/api/meal-check", {"food_desc": "chicken breast and brown rice"})
         self.assertEqual(status, 200)
