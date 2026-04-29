@@ -9,6 +9,9 @@ const state = {
   editDay: "Mon",
   wizardStep: 0,
   wizardAnswers: {},
+  chatMessages: [],    // [{role: "user"|"assistant", content: str}]
+  chatReady: false,    // true when GymBot signals ready to generate
+  chatLoading: false,  // true while waiting for API response
 };
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -54,6 +57,7 @@ document.querySelectorAll(".tab").forEach(btn => {
     document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
     document.querySelectorAll(".tab-content").forEach(c => c.classList.toggle("active", c.id === tab + "-tab"));
     if (tab === "new") renderWizard();
+    if (tab === "chat") renderChat();
   });
 });
 
@@ -612,6 +616,147 @@ async function saveEdit() {
   } else {
     toast("Save failed: " + (res.error || "unknown error"));
   }
+}
+
+// ── GymBot Chat ───────────────────────────────────────────────────────────────
+function renderChat() {
+  const el = document.getElementById("gymbot");
+  if (!el) return;
+
+  const messagesHTML = state.chatMessages.map(m => {
+    if (m.role === "assistant") {
+      return `
+        <div class="chat-bubble-wrap-bot">
+          <div class="chat-mini-avatar">🤖</div>
+          <div>
+            <div class="chat-sender">GymBot</div>
+            <div class="chat-bubble-bot">${esc(m.content)}</div>
+          </div>
+        </div>`;
+    }
+    return `
+      <div class="chat-bubble-wrap-user">
+        <div>
+          <div class="chat-sender" style="text-align:right">You</div>
+          <div class="chat-bubble-user">${esc(m.content)}</div>
+        </div>
+      </div>`;
+  }).join("");
+
+  const typingHTML = state.chatLoading ? `
+    <div class="chat-bubble-wrap-bot">
+      <div class="chat-mini-avatar">🤖</div>
+      <div>
+        <div class="chat-sender">GymBot</div>
+        <div class="chat-bubble-bot chat-typing">GymBot is thinking…</div>
+      </div>
+    </div>` : "";
+
+  const generateHTML = (state.chatReady && !state.chatLoading) ? `
+    <button class="chat-generate-btn" id="chat-gen-btn">Generate my plan ✨</button>` : "";
+
+  const inputDisabled = state.chatLoading || state.chatReady ? "disabled" : "";
+
+  el.innerHTML = `
+    <div class="chat-wrap">
+      <div class="chat-header">
+        <div class="chat-avatar">🤖</div>
+        <div style="flex:1">
+          <div class="chat-name">GymBot</div>
+          <div class="chat-status">● Ready to build your plan</div>
+        </div>
+        <button class="btn btn-secondary" id="chat-reset-btn" style="font-size:11px">New chat</button>
+      </div>
+      <div class="chat-messages" id="chat-messages-list">
+        ${messagesHTML}
+        ${typingHTML}
+        ${generateHTML}
+      </div>
+      <div class="chat-input-row">
+        <input class="input" id="chat-input" placeholder="Message GymBot…"
+          style="flex:1;border-radius:20px;padding:9px 16px" ${inputDisabled}>
+        <button class="chat-send-btn" id="chat-send-btn" ${inputDisabled}>↑</button>
+      </div>
+    </div>`;
+
+  // Auto-scroll to bottom
+  const msgList = document.getElementById("chat-messages-list");
+  if (msgList) msgList.scrollTop = msgList.scrollHeight;
+
+  // Bind send
+  const sendBtn = document.getElementById("chat-send-btn");
+  const input = document.getElementById("chat-input");
+  if (sendBtn && input) {
+    const doSend = () => {
+      const text = input.value.trim();
+      if (!text || state.chatLoading || state.chatReady) return;
+      input.value = "";
+      sendMessage(text);
+    };
+    sendBtn.addEventListener("click", doSend);
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); }
+    });
+  }
+
+  // Bind reset and generate
+  const resetBtn = document.getElementById("chat-reset-btn");
+  if (resetBtn) resetBtn.addEventListener("click", resetChat);
+  const genBtn = document.getElementById("chat-gen-btn");
+  if (genBtn) genBtn.addEventListener("click", generateFromChat);
+
+  // Trigger opening greeting if chat is empty and not already loading
+  if (state.chatMessages.length === 0 && !state.chatLoading) initChat();
+}
+
+async function initChat() {
+  state.chatLoading = true;
+  renderChat();
+  const res = await api("POST", "/api/chat", { messages: [], profile: state.profile });
+  if (res.message) {
+    state.chatMessages.push({ role: "assistant", content: res.message });
+  } else {
+    state.chatMessages.push({ role: "assistant", content: "GymBot is unavailable. Check your ANTHROPIC_API_KEY." });
+  }
+  state.chatLoading = false;
+  renderChat();
+}
+
+async function sendMessage(text) {
+  state.chatMessages.push({ role: "user", content: text });
+  state.chatLoading = true;
+  renderChat();
+  const res = await api("POST", "/api/chat", { messages: state.chatMessages, profile: state.profile });
+  if (res.message) {
+    state.chatMessages.push({ role: "assistant", content: res.message });
+    if (res.ready) state.chatReady = true;
+  } else {
+    state.chatMessages.push({ role: "assistant", content: "Something went wrong. Please try again." });
+  }
+  state.chatLoading = false;
+  renderChat();
+}
+
+async function generateFromChat() {
+  const genBtn = document.getElementById("chat-gen-btn");
+  if (genBtn) { genBtn.disabled = true; genBtn.textContent = "Generating…"; }
+  const res = await api("POST", "/api/chat/generate", { messages: state.chatMessages, profile: state.profile });
+  if (res.ok) {
+    toast("Plan generated!", "success");
+    resetChat();
+    document.querySelector('[data-tab="plans"]').click();
+    await refreshPlans();
+  } else {
+    toast("Generation failed: " + (res.detail || res.error || "unknown"));
+    if (genBtn) { genBtn.disabled = false; genBtn.textContent = "Generate my plan ✨"; }
+  }
+}
+
+function resetChat() {
+  state.chatMessages = [];
+  state.chatReady = false;
+  state.chatLoading = false;
+  renderChat();
 }
 
 // Modal button listeners
