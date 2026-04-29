@@ -53,6 +53,7 @@ document.querySelectorAll(".tab").forEach(btn => {
     const tab = btn.dataset.tab;
     document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
     document.querySelectorAll(".tab-content").forEach(c => c.classList.toggle("active", c.id === tab + "-tab"));
+    if (tab === "new") renderWizard();
   });
 });
 
@@ -236,8 +237,194 @@ async function refreshPlans() {
   renderPlans();
 }
 
-// ── Placeholders for Task 7 (to be filled in next task) ──────────────────────
-function renderWizard() {}
+// ── Wizard ────────────────────────────────────────────────────────────────────
+function renderWizard() {
+  const el = document.getElementById("wizard");
+  if (!el) return;
+
+  // Pre-fill from existing profile on first open
+  if (Object.keys(state.wizardAnswers).length === 0 && state.profile && state.profile.goal) {
+    const p = state.profile;
+    state.wizardAnswers = {
+      goal: p.goal,
+      gym_days: p.gym_days ? p.gym_days.split(",").map(d => d.trim()) : [],
+      meal_prep_day: p.meal_prep_day || "",
+      fitness_level: p.fitness_level || "",
+      equipment: p.equipment ? p.equipment.split(",").map(e => e.trim()) : [],
+      dietary_preference: p.dietary_preference || "none",
+      allergies: p.allergies || "",
+      daily_targets: { calories: p.daily_calorie_target, protein: p.protein_target_g },
+    };
+  }
+
+  const total = state.questions.length;
+
+  // Summary step after all questions answered
+  if (state.wizardStep === total) {
+    renderWizardSummary(el);
+    return;
+  }
+
+  const q = state.questions[state.wizardStep];
+  if (!q) return;
+
+  const step = state.wizardStep + 1;
+  const pct = Math.round((step / (total + 1)) * 100);
+  const ans = state.wizardAnswers[q.key];
+
+  let inputHTML = "";
+  if (q.type === "single") {
+    inputHTML = `<div class="choices">${(q.options || []).map(opt => {
+      const sel = ans === opt.value ? " selected" : "";
+      return `<button class="choice${sel}" data-key="${esc(q.key)}" data-val="${esc(opt.value)}">${esc(opt.label)}</button>`;
+    }).join("")}</div>`;
+  } else if (q.type === "multi") {
+    const selected = Array.isArray(ans) ? ans : [];
+    inputHTML = `<div class="choices">${(q.options || []).map(opt => {
+      const sel = selected.includes(opt.value) ? " selected" : "";
+      return `<button class="choice${sel}" data-key="${esc(q.key)}" data-val="${esc(opt.value)}" data-multi="1">${esc(opt.label)}</button>`;
+    }).join("")}</div>`;
+  } else if (q.type === "text") {
+    const val = typeof ans === "string" ? ans : "";
+    inputHTML = `<input class="input input-wide" id="wizard-text" value="${esc(val)}" placeholder="${esc(q.placeholder || "")}">`;
+  } else if (q.type === "targets") {
+    const goal = state.wizardAnswers.goal || "maintain";
+    const level = state.wizardAnswers.fitness_level || "beginner";
+    const [defCal, defProt] = estimateTargets(goal, level);
+    const calVal = (ans && ans.calories) ? ans.calories : defCal;
+    const protVal = (ans && ans.protein) ? ans.protein : defProt;
+    inputHTML = `<div class="targets-row">
+      <div><div class="field-label">Calories (kcal)</div><input class="input input-wide" id="wizard-cal" type="number" value="${calVal}"></div>
+      <div><div class="field-label">Protein (g)</div><input class="input input-wide" id="wizard-prot" type="number" value="${protVal}"></div>
+    </div>`;
+  }
+
+  const isLast = state.wizardStep === total - 1;
+  el.innerHTML = `
+    <div class="wizard-wrap">
+      <div class="progress-header">
+        <div class="progress-step-lbl">Question ${step} of ${total}</div>
+        <div class="progress-track"><div class="progress-fill cal" style="width:${pct}%"></div></div>
+      </div>
+      <div class="wizard-card">
+        <div class="wizard-q">${esc(q.question)}</div>
+        <div class="wizard-why">${esc(q.why)}</div>
+        ${inputHTML}
+      </div>
+      <div class="wizard-nav">
+        ${state.wizardStep > 0 ? '<button class="btn btn-back" id="wiz-back">← Back</button>' : ''}
+        <button class="btn btn-next" id="wiz-next">${isLast ? "Review →" : "Next →"}</button>
+      </div>
+    </div>`;
+
+  el.querySelectorAll(".choice").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.key;
+      const val = btn.dataset.val;
+      if (btn.dataset.multi) {
+        if (!Array.isArray(state.wizardAnswers[key])) state.wizardAnswers[key] = [];
+        const idx = state.wizardAnswers[key].indexOf(val);
+        if (idx >= 0) state.wizardAnswers[key].splice(idx, 1);
+        else state.wizardAnswers[key].push(val);
+      } else {
+        state.wizardAnswers[key] = val;
+      }
+      renderWizard();
+    });
+  });
+
+  document.getElementById("wiz-next").addEventListener("click", () => {
+    if (q.type === "text") {
+      state.wizardAnswers[q.key] = (document.getElementById("wizard-text").value.trim()) || "none";
+    } else if (q.type === "targets") {
+      state.wizardAnswers[q.key] = {
+        calories: parseInt(document.getElementById("wizard-cal").value) || 2000,
+        protein: parseInt(document.getElementById("wizard-prot").value) || 150,
+      };
+    }
+    state.wizardStep++;
+    renderWizard();
+  });
+
+  const backBtn = document.getElementById("wiz-back");
+  if (backBtn) backBtn.addEventListener("click", () => { state.wizardStep--; renderWizard(); });
+}
+
+function renderWizardSummary(el) {
+  const a = state.wizardAnswers;
+  const gymDays = Array.isArray(a.gym_days) ? a.gym_days : [];
+  const equipment = Array.isArray(a.equipment) ? a.equipment : [];
+  const targets = a.daily_targets || {};
+  const rows = [
+    ["Goal", (a.goal || "—").replace(/_/g, " ")],
+    ["Gym Days", gymDays.join(", ") || "—"],
+    ["Meal Prep Day", a.meal_prep_day || "—"],
+    ["Fitness Level", a.fitness_level || "—"],
+    ["Equipment", equipment.join(", ") || "—"],
+    ["Diet", a.dietary_preference || "—"],
+    ["Allergies", a.allergies || "none"],
+    ["Calories Target", targets.calories ? `${targets.calories} kcal` : "—"],
+    ["Protein Target", targets.protein ? `${targets.protein}g` : "—"],
+  ];
+  el.innerHTML = `
+    <div class="wizard-wrap">
+      <div class="progress-header">
+        <div class="progress-step-lbl">Review your answers</div>
+        <div class="progress-track"><div class="progress-fill cal" style="width:100%"></div></div>
+      </div>
+      <div class="wizard-card">
+        <ul class="summary-list">
+          ${rows.map(([k, v]) => `<li class="summary-row"><span class="summary-key">${esc(k)}</span><span class="summary-val">${esc(String(v))}</span></li>`).join("")}
+        </ul>
+        <button class="btn-generate" id="wiz-generate">Generate Plan ✨</button>
+      </div>
+      <div class="wizard-nav">
+        <button class="btn btn-back" id="wiz-back">← Back</button>
+      </div>
+    </div>`;
+  document.getElementById("wiz-generate").addEventListener("click", generateFromWizard);
+  document.getElementById("wiz-back").addEventListener("click", () => { state.wizardStep--; renderWizard(); });
+}
+
+function estimateTargets(goal, level) {
+  const t = {
+    "lose_weight-beginner": [1600, 120], "lose_weight-intermediate": [1800, 140], "lose_weight-advanced": [2000, 160],
+    "build_muscle-beginner": [2500, 160], "build_muscle-intermediate": [2800, 180], "build_muscle-advanced": [3200, 200],
+    "maintain-beginner": [2000, 130], "maintain-intermediate": [2200, 150], "maintain-advanced": [2500, 160],
+    "endurance-beginner": [2200, 140], "endurance-intermediate": [2500, 160], "endurance-advanced": [2800, 170],
+  };
+  return t[`${goal}-${level}`] || [2000, 150];
+}
+
+async function generateFromWizard() {
+  const a = state.wizardAnswers;
+  const gymDays = Array.isArray(a.gym_days) ? a.gym_days : [];
+  const profile = {
+    goal: a.goal || "maintain",
+    gym_days: gymDays.join(","),
+    rest_days: DAYS.filter(d => !gymDays.includes(d)).join(","),
+    meal_prep_day: a.meal_prep_day || "Sun",
+    fitness_level: a.fitness_level || "beginner",
+    equipment: Array.isArray(a.equipment) ? a.equipment.join(",") : (a.equipment || "bodyweight"),
+    dietary_preference: a.dietary_preference || "none",
+    allergies: a.allergies || "none",
+    daily_calorie_target: (a.daily_targets && a.daily_targets.calories) || 2000,
+    protein_target_g: (a.daily_targets && a.daily_targets.protein) || 150,
+  };
+  const genBtn = document.getElementById("wiz-generate");
+  if (genBtn) { genBtn.disabled = true; genBtn.textContent = "Generating…"; }
+  const res = await api("POST", "/api/plans/generate", profile);
+  if (res.ok) {
+    toast("Plan generated!", "success");
+    state.wizardStep = 0;
+    state.wizardAnswers = {};
+    document.querySelector('[data-tab="plans"]').click();
+    await refreshPlans();
+  } else {
+    toast("Generation failed: " + (res.detail || res.error || "unknown"));
+    if (genBtn) { genBtn.disabled = false; genBtn.textContent = "Generate Plan ✨"; }
+  }
+}
 
 // ── Edit Modal ────────────────────────────────────────────────────────────────
 async function openEdit(planId) {
@@ -443,7 +630,7 @@ async function init() {
     api("GET", "/api/profile"),
   ]);
   renderPlans();
-  renderWizard();
+  // Don't pre-render wizard on load — render on first tab click instead
 }
 
 init();
