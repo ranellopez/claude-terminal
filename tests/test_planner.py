@@ -29,10 +29,16 @@ def _create_tables(engine):
 
 @pytest.fixture
 def conn():
-    engine = create_engine("sqlite:///:memory:")
+    from sqlalchemy.pool import StaticPool
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     _create_tables(engine)
     with engine.connect() as c:
         yield c
+    engine.dispose()
 
 
 SAMPLE_PROFILE = {
