@@ -1,17 +1,38 @@
 import sys
-import sqlite3
 from datetime import date, timedelta
 from unittest.mock import patch, MagicMock
 sys.path.insert(0, ".")
 import pytest
 import json as json_lib
-from planner import init_db, get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES, save_profile, load_profile, generate_plan_library, save_plan, load_current_plan, ask_claude, generate_plan, DAYS, format_week_view, load_check_offs, mark_done, check_meal, export_markdown, export_json, add_custom_item, get_all_meals, QUESTIONS, get_all_plans, get_plan_by_id, update_plan_by_id, delete_plan_by_id, restore_plan_by_id
+from sqlalchemy import create_engine, text
+from planner import get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES, save_profile, load_profile, generate_plan_library, save_plan, load_current_plan, ask_claude, generate_plan, DAYS, format_week_view, load_check_offs, mark_done, check_meal, export_markdown, export_json, add_custom_item, get_all_meals, QUESTIONS, get_all_plans, get_plan_by_id, update_plan_by_id, delete_plan_by_id, restore_plan_by_id
 
 
-def make_conn():
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    return conn
+def _create_tables(engine):
+    with engine.connect() as c:
+        c.execute(text("""CREATE TABLE profile (
+            id INTEGER PRIMARY KEY, goal TEXT, gym_days TEXT, rest_days TEXT,
+            meal_prep_day TEXT, fitness_level TEXT, equipment TEXT,
+            dietary_preference TEXT, allergies TEXT,
+            daily_calorie_target INTEGER, protein_target_g INTEGER)"""))
+        c.execute(text("""CREATE TABLE weekly_plans (
+            id INTEGER PRIMARY KEY, week_start TEXT UNIQUE,
+            plan_json TEXT, created_at TEXT)"""))
+        c.execute(text("""CREATE TABLE check_offs (
+            id INTEGER PRIMARY KEY, week_start TEXT, day TEXT,
+            item_type TEXT, item_name TEXT, done INTEGER DEFAULT 0,
+            nutrition_feedback TEXT)"""))
+        c.execute(text("""CREATE TABLE custom_items (
+            id INTEGER PRIMARY KEY, item_type TEXT, data_json TEXT)"""))
+        c.commit()
+
+
+@pytest.fixture
+def conn():
+    engine = create_engine("sqlite:///:memory:")
+    _create_tables(engine)
+    with engine.connect() as c:
+        yield c
 
 
 SAMPLE_PROFILE = {
@@ -28,10 +49,8 @@ SAMPLE_PROFILE = {
 }
 
 
-def test_init_db_creates_tables():
-    conn = make_conn()
-    init_db(conn)
-    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+def test_tables_exist(conn):
+    tables = {r.name for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
     assert "profile" in tables
     assert "weekly_plans" in tables
     assert "check_offs" in tables
@@ -78,15 +97,11 @@ def test_sample_meals_returns_all_types():
     assert "dinner" in sampled
 
 
-def test_load_profile_returns_none_when_empty():
-    conn = make_conn()
-    init_db(conn)
+def test_load_profile_returns_none_when_empty(conn):
     assert load_profile(conn) is None
 
 
-def test_save_and_load_profile_roundtrip():
-    conn = make_conn()
-    init_db(conn)
+def test_save_and_load_profile_roundtrip(conn):
     profile = {
         "goal": "build_muscle",
         "gym_days": "Mon,Wed,Fri",
@@ -106,9 +121,7 @@ def test_save_and_load_profile_roundtrip():
     assert loaded["daily_calorie_target"] == 2500
 
 
-def test_generate_plan_library_has_all_days():
-    conn = make_conn()
-    init_db(conn)
+def test_generate_plan_library_has_all_days(conn):
     plan = generate_plan_library(SAMPLE_PROFILE, conn)
     for day in DAYS:
         assert day in plan
@@ -116,18 +129,14 @@ def test_generate_plan_library_has_all_days():
         assert "meals" in plan[day]
 
 
-def test_generate_plan_library_gym_days_have_exercises():
-    conn = make_conn()
-    init_db(conn)
+def test_generate_plan_library_gym_days_have_exercises(conn):
     plan = generate_plan_library(SAMPLE_PROFILE, conn)
     for day in ["Mon", "Wed", "Fri"]:
         assert plan[day]["type"] == "gym"
         assert len(plan[day]["exercises"]) > 0
 
 
-def test_save_and_load_plan_roundtrip():
-    conn = make_conn()
-    init_db(conn)
+def test_save_and_load_plan_roundtrip(conn):
     plan = generate_plan_library(SAMPLE_PROFILE, conn)
     week_start = get_week_start()
     save_plan(conn, week_start, plan)
@@ -148,10 +157,8 @@ def test_ask_claude_calls_api():
     assert result == "test response"
 
 
-def test_generate_plan_falls_back_without_api_key(monkeypatch):
+def test_generate_plan_falls_back_without_api_key(conn, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    conn = make_conn()
-    init_db(conn)
     plan = generate_plan(SAMPLE_PROFILE, conn)
     for day in DAYS:
         assert day in plan
@@ -159,18 +166,14 @@ def test_generate_plan_falls_back_without_api_key(monkeypatch):
 
 # Task 8: Week View Display
 
-def test_format_week_view_contains_all_days():
-    conn = make_conn()
-    init_db(conn)
+def test_format_week_view_contains_all_days(conn):
     plan = generate_plan_library(SAMPLE_PROFILE, conn)
     output = format_week_view(plan, [])
     for day in DAYS:
         assert day in output
 
 
-def test_format_week_view_shows_gym_type():
-    conn = make_conn()
-    init_db(conn)
+def test_format_week_view_shows_gym_type(conn):
     plan = generate_plan_library(SAMPLE_PROFILE, conn)
     output = format_week_view(plan, [])
     assert "GYM" in output or "gym" in output.lower()
@@ -178,16 +181,12 @@ def test_format_week_view_shows_gym_type():
 
 # Task 9: Check-Off System
 
-def test_load_check_offs_empty():
-    conn = make_conn()
-    init_db(conn)
+def test_load_check_offs_empty(conn):
     result = load_check_offs(conn, "2026-04-20")
     assert result == []
 
 
-def test_mark_done_persists():
-    conn = make_conn()
-    init_db(conn)
+def test_mark_done_persists(conn):
     mark_done(conn, "2026-04-20", "Mon", "exercise", "Push-ups")
     check_offs = load_check_offs(conn, "2026-04-20")
     assert len(check_offs) == 1
@@ -195,9 +194,7 @@ def test_mark_done_persists():
     assert check_offs[0]["item_name"] == "Push-ups"
 
 
-def test_mark_done_idempotent():
-    conn = make_conn()
-    init_db(conn)
+def test_mark_done_idempotent(conn):
     mark_done(conn, "2026-04-20", "Mon", "exercise", "Push-ups")
     mark_done(conn, "2026-04-20", "Mon", "exercise", "Push-ups")
     check_offs = load_check_offs(conn, "2026-04-20")
@@ -206,23 +203,19 @@ def test_mark_done_idempotent():
 
 # Task 10: Meal Checker
 
-def test_check_meal_saves_feedback(monkeypatch):
-    conn = make_conn()
-    init_db(conn)
+def test_check_meal_saves_feedback(conn, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     with patch("planner.ask_claude") as mock_ask:
         mock_ask.return_value = "Verdict: on track. Estimated 520 kcal, 45g protein. Good protein source. Consider adding vegetables. Try a side salad next meal."
         result = check_meal(SAMPLE_PROFILE, "grilled chicken and rice", conn)
     assert "on track" in result.lower() or "verdict" in result.lower()
-    rows = conn.execute("SELECT * FROM check_offs WHERE item_type='meal_check'").fetchall()
+    rows = conn.execute(text("SELECT * FROM check_offs WHERE item_type='meal_check'")).fetchall()
     assert len(rows) == 1
 
 
 # Task 11: Export
 
-def test_export_markdown_contains_days():
-    conn = make_conn()
-    init_db(conn)
+def test_export_markdown_contains_days(conn):
     plan = generate_plan_library(SAMPLE_PROFILE, conn)
     md = export_markdown(plan, "2026-04-20", [])
     for day in DAYS:
@@ -230,9 +223,7 @@ def test_export_markdown_contains_days():
     assert "# Weekly Plan" in md
 
 
-def test_export_json_is_valid():
-    conn = make_conn()
-    init_db(conn)
+def test_export_json_is_valid(conn):
     plan = generate_plan_library(SAMPLE_PROFILE, conn)
     result = export_json(plan, "2026-04-20")
     parsed = json_lib.loads(result)
@@ -244,9 +235,7 @@ def test_export_json_is_valid():
 
 # Task 12: Custom Items
 
-def test_add_and_retrieve_custom_meal():
-    conn = make_conn()
-    init_db(conn)
+def test_add_and_retrieve_custom_meal(conn):
     custom = {"name": "My Special Bowl", "goal": ["build_muscle"], "dietary": ["none"], "meal_type": "lunch", "protein_g": 40, "calories": 600}
     add_custom_item(conn, "meal", custom)
     all_meals = get_all_meals(conn)
@@ -263,15 +252,11 @@ def test_questions_has_8_items():
         assert "type" in q
 
 
-def test_get_all_plans_empty():
-    conn = make_conn()
-    init_db(conn)
+def test_get_all_plans_empty(conn):
     assert get_all_plans(conn) == []
 
 
-def test_get_all_plans_returns_saved_plan():
-    conn = make_conn()
-    init_db(conn)
+def test_get_all_plans_returns_saved_plan(conn):
     save_profile(conn, SAMPLE_PROFILE)
     plan = generate_plan_library(SAMPLE_PROFILE, conn)
     save_plan(conn, "2026-04-20", plan)
@@ -282,9 +267,7 @@ def test_get_all_plans_returns_saved_plan():
     assert "goal" in plans[0]
 
 
-def test_get_plan_by_id_returns_plan():
-    conn = make_conn()
-    init_db(conn)
+def test_get_plan_by_id_returns_plan(conn):
     save_profile(conn, SAMPLE_PROFILE)
     plan = generate_plan_library(SAMPLE_PROFILE, conn)
     save_plan(conn, "2026-04-20", plan)
@@ -296,15 +279,11 @@ def test_get_plan_by_id_returns_plan():
     assert "Mon" in result["plan"]
 
 
-def test_get_plan_by_id_missing_returns_none():
-    conn = make_conn()
-    init_db(conn)
+def test_get_plan_by_id_missing_returns_none(conn):
     assert get_plan_by_id(conn, 99999) is None
 
 
-def test_update_plan_by_id():
-    conn = make_conn()
-    init_db(conn)
+def test_update_plan_by_id(conn):
     save_profile(conn, SAMPLE_PROFILE)
     plan = generate_plan_library(SAMPLE_PROFILE, conn)
     save_plan(conn, "2026-04-20", plan)
@@ -316,9 +295,7 @@ def test_update_plan_by_id():
     assert updated["plan"]["Mon"]["exercises"][0]["name"] == "Modified"
 
 
-def test_delete_plan_by_id():
-    conn = make_conn()
-    init_db(conn)
+def test_delete_plan_by_id(conn):
     save_profile(conn, SAMPLE_PROFILE)
     plan = generate_plan_library(SAMPLE_PROFILE, conn)
     save_plan(conn, "2026-04-20", plan)
@@ -329,9 +306,7 @@ def test_delete_plan_by_id():
     assert get_all_plans(conn) == []
 
 
-def test_restore_plan_by_id():
-    conn = make_conn()
-    init_db(conn)
+def test_restore_plan_by_id(conn):
     save_profile(conn, SAMPLE_PROFILE)
     plan = generate_plan_library(SAMPLE_PROFILE, conn)
     save_plan(conn, "2020-01-06", plan)
@@ -342,36 +317,28 @@ def test_restore_plan_by_id():
     assert current is not None
 
 
-def test_update_plan_by_id_missing_returns_false():
-    conn = make_conn()
-    init_db(conn)
+def test_update_plan_by_id_missing_returns_false(conn):
     ok = update_plan_by_id(conn, 99999, {})
     assert ok is False
 
 
-def test_delete_plan_by_id_missing_returns_false():
-    conn = make_conn()
-    init_db(conn)
+def test_delete_plan_by_id_missing_returns_false(conn):
     ok = delete_plan_by_id(conn, 99999)
     assert ok is False
 
 
-def test_delete_check_off():
-    conn = make_conn()
-    init_db(conn)
+def test_delete_check_off(conn):
     mark_done(conn, "2026-04-21", "Mon", "exercise", "Push-ups")
-    row = conn.execute("SELECT id FROM check_offs WHERE week_start='2026-04-21'").fetchone()
+    row = conn.execute(text("SELECT id FROM check_offs WHERE week_start='2026-04-21'")).fetchone()
     assert row is not None
     from planner import delete_check_off
-    ok = delete_check_off(conn, row["id"])
+    ok = delete_check_off(conn, row.id)
     assert ok is True
-    gone = conn.execute("SELECT * FROM check_offs WHERE id=?", (row["id"],)).fetchone()
+    gone = conn.execute(text("SELECT * FROM check_offs WHERE id=:id"), {"id": row.id}).fetchone()
     assert gone is None
 
 
-def test_list_custom_items():
-    conn = make_conn()
-    init_db(conn)
+def test_list_custom_items(conn):
     from planner import list_custom_items
     add_custom_item(conn, "meal", {
         "name": "My Bowl",
@@ -388,9 +355,7 @@ def test_list_custom_items():
     assert "id" in items[0]
 
 
-def test_delete_custom_item():
-    conn = make_conn()
-    init_db(conn)
+def test_delete_custom_item(conn):
     from planner import list_custom_items, delete_custom_item
     add_custom_item(conn, "exercise", {
         "name": "Delete Me",
