@@ -31,6 +31,8 @@ def upgrade():
     op.create_table(
         "weekly_plans",
         sa.Column("id", sa.Integer(), primary_key=True),
+        # nullable=False is intentionally stricter than the original SQLite schema;
+        # the application always provides a week_start value derived from get_week_start()
         sa.Column("week_start", sa.Text(), nullable=False, unique=True),
         sa.Column("plan_json", sa.Text()),
         sa.Column("created_at", sa.Text()),
