@@ -1,0 +1,52 @@
+/* frontend/components/PlanModal/PlanModal.module.css */
+.overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.modal {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  width: min(640px, 95vw); max-height: 85vh; display: flex; flex-direction: column;
+}
+.modalHeader {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 18px 20px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.modalTitle    { font-size: 14px; font-weight: 800; color: var(--accent); letter-spacing: 0.5px; }
+.modalSubtitle { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+.closeBtn      { background: none; border: none; color: var(--text-muted); font-size: 20px; line-height: 1; padding: 0 0 0 12px; }
+.closeBtn:hover { color: var(--text); }
+
+.dayTabs { display: flex; gap: 6px; padding: 12px 20px 0; flex-shrink: 0; flex-wrap: wrap; }
+.dayTab  {
+  padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px;
+  border: 1px solid var(--border); color: var(--text-muted); background: transparent; transition: all 0.15s;
+}
+.dayTab:hover:not(.dayTabActive) { border-color: var(--accent); color: var(--accent); }
+.dayTabActive { background: var(--accent); color: #000; border-color: var(--accent); }
+
+.body    { padding: 12px 20px; overflow-y: auto; flex: 1; }
+.footer  { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0; }
+
+.fieldGroup { margin-bottom: 16px; }
+.sectionLabel {
+  font-size: 10px; font-weight: 800; color: var(--accent); text-transform: uppercase;
+  letter-spacing: 1.5px; margin-bottom: 8px;
+}
+.fieldRow   { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.mealLabel  { font-size: 11px; color: var(--text-muted); width: 75px; flex-shrink: 0; }
+
+.input        { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-size: 13px; outline: none; transition: border-color 0.15s; }
+.input:focus  { border-color: var(--accent); }
+.inputName    { flex: 1; }
+.inputNum     { width: 70px; }
+.inputWide    { width: 100%; }
+
+.delBtn       { background: none; border: none; color: var(--danger); font-size: 16px; padding: 0 4px; line-height: 1; }
+.delBtn:hover { opacity: 0.7; }
+
+.btn          { padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: 800; border: none; letter-spacing: 0.5px; transition: opacity 0.15s; }
+.btn:hover    { opacity: 0.8; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btnPrimary   { background: var(--accent); color: #000; }
+.btnSecondary { background: var(--surface-raised); color: var(--text-muted); }
+.btnAdd       { background: var(--surface-raised); color: var(--text-muted); border: 1px solid var(--border); width: 100%; margin-top: 4px; }
