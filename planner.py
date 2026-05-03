@@ -1,12 +1,19 @@
 import anthropic
-import sqlite3
 import json
 import random
 import os
 import sys
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
 
-DB_PATH = "planner.db"
+load_dotenv()
+
+_db_url = os.getenv("DATABASE_URL", "sqlite:///planner.db")
+if _db_url.startswith("postgres://"):
+    _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(_db_url)
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 MEALS = [
@@ -172,31 +179,31 @@ def sample_meals(meals):
 
 
 def get_all_meals(conn):
-    custom = conn.execute("SELECT data_json FROM custom_items WHERE item_type='meal'").fetchall()
-    return MEALS + [json.loads(r["data_json"]) for r in custom]
+    custom = conn.execute(text("SELECT data_json FROM custom_items WHERE item_type='meal'")).fetchall()
+    return MEALS + [json.loads(r.data_json) for r in custom]
 
 
 def get_all_exercises(conn):
-    custom = conn.execute("SELECT data_json FROM custom_items WHERE item_type='exercise'").fetchall()
-    return EXERCISES + [json.loads(r["data_json"]) for r in custom]
+    custom = conn.execute(text("SELECT data_json FROM custom_items WHERE item_type='exercise'")).fetchall()
+    return EXERCISES + [json.loads(r.data_json) for r in custom]
 
 
 def save_profile(conn, profile):
-    conn.execute("DELETE FROM profile")
-    conn.execute("""
+    conn.execute(text("DELETE FROM profile"))
+    conn.execute(text("""
         INSERT INTO profile (goal, gym_days, rest_days, meal_prep_day, fitness_level,
             equipment, dietary_preference, allergies, daily_calorie_target, protein_target_g)
         VALUES (:goal, :gym_days, :rest_days, :meal_prep_day, :fitness_level,
             :equipment, :dietary_preference, :allergies, :daily_calorie_target, :protein_target_g)
-    """, profile)
+    """), profile)
     conn.commit()
 
 
 def load_profile(conn):
-    row = conn.execute("SELECT * FROM profile LIMIT 1").fetchone()
+    row = conn.execute(text("SELECT * FROM profile LIMIT 1")).fetchone()
     if row is None:
         return None
-    return dict(row)
+    return dict(row._mapping)
 
 
 def estimate_targets(goal, fitness_level):
@@ -313,36 +320,36 @@ def generate_plan_library(profile, conn):
 
 
 def save_plan(conn, week_start, plan):
-    conn.execute("""
+    conn.execute(text("""
         INSERT INTO weekly_plans (week_start, plan_json, created_at)
-        VALUES (?, ?, datetime('now'))
-        ON CONFLICT(week_start) DO UPDATE SET plan_json=excluded.plan_json, created_at=excluded.created_at
-    """, (week_start, json.dumps(plan)))
+        VALUES (:week_start, :plan_json, :created_at)
+        ON CONFLICT(week_start) DO UPDATE SET plan_json=EXCLUDED.plan_json, created_at=EXCLUDED.created_at
+    """), {"week_start": week_start, "plan_json": json.dumps(plan), "created_at": datetime.utcnow().isoformat()})
     conn.commit()
 
 
 def load_current_plan(conn):
     week_start = get_week_start()
-    row = conn.execute("SELECT plan_json FROM weekly_plans WHERE week_start=?", (week_start,)).fetchone()
+    row = conn.execute(text("SELECT plan_json FROM weekly_plans WHERE week_start=:week_start"), {"week_start": week_start}).fetchone()
     if row is None:
         return None
-    return json.loads(row["plan_json"])
+    return json.loads(row.plan_json)
 
 
 def get_all_plans(conn):
     current_week = get_week_start()
     profile = load_profile(conn)
-    rows = conn.execute(
+    rows = conn.execute(text(
         "SELECT id, week_start, plan_json, created_at FROM weekly_plans ORDER BY week_start DESC"
-    ).fetchall()
+    )).fetchall()
     result = []
     for row in rows:
-        plan = json.loads(row["plan_json"])
+        plan = json.loads(row.plan_json)
         result.append({
-            "id": row["id"],
-            "week_start": row["week_start"],
-            "created_at": row["created_at"],
-            "is_current": row["week_start"] == current_week,
+            "id": row.id,
+            "week_start": row.week_start,
+            "created_at": row.created_at,
+            "is_current": row.week_start == current_week,
             "gym_days": sum(1 for d in plan.values() if d.get("type") == "gym"),
             "goal": profile["goal"] if profile else "unknown",
             "daily_calorie_target": profile["daily_calorie_target"] if profile else 0,
@@ -353,63 +360,55 @@ def get_all_plans(conn):
 
 
 def get_plan_by_id(conn, plan_id):
-    row = conn.execute(
-        "SELECT id, week_start, plan_json, created_at FROM weekly_plans WHERE id=?", (plan_id,)
-    ).fetchone()
+    row = conn.execute(text(
+        "SELECT id, week_start, plan_json, created_at FROM weekly_plans WHERE id=:plan_id"
+    ), {"plan_id": plan_id}).fetchone()
     if row is None:
         return None
     return {
-        "id": row["id"],
-        "week_start": row["week_start"],
-        "created_at": row["created_at"],
-        "is_current": row["week_start"] == get_week_start(),
-        "plan": json.loads(row["plan_json"]),
+        "id": row.id,
+        "week_start": row.week_start,
+        "created_at": row.created_at,
+        "is_current": row.week_start == get_week_start(),
+        "plan": json.loads(row.plan_json),
     }
 
 
 def update_plan_by_id(conn, plan_id, plan):
-    result = conn.execute(
-        "UPDATE weekly_plans SET plan_json=? WHERE id=?",
-        (json.dumps(plan), plan_id)
-    )
+    result = conn.execute(text(
+        "UPDATE weekly_plans SET plan_json=:plan_json WHERE id=:plan_id"
+    ), {"plan_json": json.dumps(plan), "plan_id": plan_id})
     conn.commit()
     return result.rowcount > 0
 
 
 def delete_plan_by_id(conn, plan_id):
-    result = conn.execute("DELETE FROM weekly_plans WHERE id=?", (plan_id,))
+    result = conn.execute(text("DELETE FROM weekly_plans WHERE id=:plan_id"), {"plan_id": plan_id})
     conn.commit()
     return result.rowcount > 0
 
 
 def restore_plan_by_id(conn, plan_id):
-    row = conn.execute(
-        "SELECT plan_json FROM weekly_plans WHERE id=?", (plan_id,)
-    ).fetchone()
+    row = conn.execute(text("SELECT plan_json FROM weekly_plans WHERE id=:plan_id"), {"plan_id": plan_id}).fetchone()
     if row is None:
         return False
-    save_plan(conn, get_week_start(), json.loads(row["plan_json"]))
+    save_plan(conn, get_week_start(), json.loads(row.plan_json))
     return True
 
 
 def delete_check_off(conn, check_off_id):
-    result = conn.execute("DELETE FROM check_offs WHERE id=?", (check_off_id,))
+    result = conn.execute(text("DELETE FROM check_offs WHERE id=:id"), {"id": check_off_id})
     conn.commit()
     return result.rowcount > 0
 
 
 def list_custom_items(conn):
-    rows = conn.execute(
-        "SELECT id, item_type, data_json FROM custom_items"
-    ).fetchall()
-    return [
-        {"id": r["id"], "item_type": r["item_type"], "data": json.loads(r["data_json"])}
-        for r in rows
-    ]
+    rows = conn.execute(text("SELECT id, item_type, data_json FROM custom_items")).fetchall()
+    return [{"id": r.id, "item_type": r.item_type, "data": json.loads(r.data_json)} for r in rows]
 
 
 def delete_custom_item(conn, item_id):
-    result = conn.execute("DELETE FROM custom_items WHERE id=?", (item_id,))
+    result = conn.execute(text("DELETE FROM custom_items WHERE id=:id"), {"id": item_id})
     conn.commit()
     return result.rowcount > 0
 
@@ -479,50 +478,8 @@ def get_week_start():
     return (today - timedelta(days=today.weekday())).isoformat()
 
 
-def init_db(conn):
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS profile (
-            id INTEGER PRIMARY KEY,
-            goal TEXT,
-            gym_days TEXT,
-            rest_days TEXT,
-            meal_prep_day TEXT,
-            fitness_level TEXT,
-            equipment TEXT,
-            dietary_preference TEXT,
-            allergies TEXT,
-            daily_calorie_target INTEGER,
-            protein_target_g INTEGER
-        );
-        CREATE TABLE IF NOT EXISTS weekly_plans (
-            id INTEGER PRIMARY KEY,
-            week_start TEXT UNIQUE,
-            plan_json TEXT,
-            created_at TEXT
-        );
-        CREATE TABLE IF NOT EXISTS check_offs (
-            id INTEGER PRIMARY KEY,
-            week_start TEXT,
-            day TEXT,
-            item_type TEXT,
-            item_name TEXT,
-            done INTEGER DEFAULT 0,
-            nutrition_feedback TEXT
-        );
-        CREATE TABLE IF NOT EXISTS custom_items (
-            id INTEGER PRIMARY KEY,
-            item_type TEXT,
-            data_json TEXT
-        );
-    """)
-    conn.commit()
-
-
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    init_db(conn)
-    return conn
+    return engine.connect()
 
 
 def format_week_view(plan, check_offs):
@@ -569,26 +526,20 @@ def display_week(conn):
 
 
 def load_check_offs(conn, week_start):
-    rows = conn.execute(
-        "SELECT * FROM check_offs WHERE week_start=?", (week_start,)
-    ).fetchall()
-    return [dict(r) for r in rows]
+    rows = conn.execute(text("SELECT * FROM check_offs WHERE week_start=:week_start"), {"week_start": week_start}).fetchall()
+    return [dict(r._mapping) for r in rows]
 
 
 def mark_done(conn, week_start, day, item_type, item_name):
-    existing = conn.execute(
-        "SELECT id FROM check_offs WHERE week_start=? AND day=? AND item_type=? AND item_name=?",
-        (week_start, day, item_type, item_name)
-    ).fetchone()
+    existing = conn.execute(text(
+        "SELECT id FROM check_offs WHERE week_start=:week_start AND day=:day AND item_type=:item_type AND item_name=:item_name"
+    ), {"week_start": week_start, "day": day, "item_type": item_type, "item_name": item_name}).fetchone()
     if existing:
-        conn.execute(
-            "UPDATE check_offs SET done=1 WHERE id=?", (existing["id"],)
-        )
+        conn.execute(text("UPDATE check_offs SET done=1 WHERE id=:id"), {"id": existing.id})
     else:
-        conn.execute(
-            "INSERT INTO check_offs (week_start, day, item_type, item_name, done) VALUES (?,?,?,?,1)",
-            (week_start, day, item_type, item_name)
-        )
+        conn.execute(text(
+            "INSERT INTO check_offs (week_start, day, item_type, item_name, done) VALUES (:week_start, :day, :item_type, :item_name, 1)"
+        ), {"week_start": week_start, "day": day, "item_type": item_type, "item_name": item_name})
     conn.commit()
 
 
@@ -654,10 +605,10 @@ Respond in under 150 words covering:
         feedback = f"AI unavailable: {e}"
 
     week_start = get_week_start()
-    conn.execute("""
+    conn.execute(text("""
         INSERT INTO check_offs (week_start, day, item_type, item_name, done, nutrition_feedback)
-        VALUES (?, ?, 'meal_check', ?, 1, ?)
-    """, (week_start, date.today().strftime("%a"), food_desc[:100], feedback))
+        VALUES (:week_start, :day, 'meal_check', :item_name, 1, :feedback)
+    """), {"week_start": week_start, "day": date.today().strftime("%a"), "item_name": food_desc[:100], "feedback": feedback})
     conn.commit()
     return feedback
 
@@ -733,10 +684,8 @@ def export_menu(conn):
 
 
 def add_custom_item(conn, item_type, data):
-    conn.execute(
-        "INSERT INTO custom_items (item_type, data_json) VALUES (?, ?)",
-        (item_type, json.dumps(data))
-    )
+    conn.execute(text("INSERT INTO custom_items (item_type, data_json) VALUES (:item_type, :data_json)"),
+                 {"item_type": item_type, "data_json": json.dumps(data)})
     conn.commit()
 
 
