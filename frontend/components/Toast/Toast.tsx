@@ -10,7 +10,7 @@ interface Props {
 }
 
 export default function Toast({ message, type = '', visible, onHide }: Props) {
-  const timer = useRef<ReturnType<typeof setTimeout>>()
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
     if (visible) {

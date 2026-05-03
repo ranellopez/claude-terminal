@@ -17,7 +17,7 @@ interface Props {
 export default function PlansTab({ plans, onRestore, onDelete, onEdit }: Props) {
   const [openId, setOpenId] = useState<number | null>(null)
   const [fullPlans, setFullPlans] = useState<Record<number, PlanFull>>({})
-  const [activeDay, setActiveDay] = useState<Record<number, string>>({})
+  const [activeDay, setActiveDay] = useState<Record<number, (typeof DAYS)[number]>>({})
 
   if (!plans.length) {
     return <p className={styles.empty}>No saved plans yet. Use New Plan to generate one.</p>
@@ -101,7 +101,7 @@ export default function PlansTab({ plans, onRestore, onDelete, onEdit }: Props) 
                     >{d}</button>
                   ))}
                 </div>
-                <DayContent dayData={(full.plan as Record<string, DayPlan | undefined>)[day]} />
+                <DayContent dayData={full.plan[day]} />
               </div>
             )}
           </div>
