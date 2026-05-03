@@ -28,7 +28,8 @@ src.row_factory = sqlite3.Row
 pg = create_engine(POSTGRES_URL)
 
 with pg.connect() as dst:
-    # profile
+    # profile — singleton table; clear and re-insert
+    dst.execute(text("DELETE FROM profile"))
     rows = src.execute("SELECT * FROM profile").fetchall()
     for row in rows:
         dst.execute(text("""
@@ -36,7 +37,6 @@ with pg.connect() as dst:
                 equipment, dietary_preference, allergies, daily_calorie_target, protein_target_g)
             VALUES (:goal, :gym_days, :rest_days, :meal_prep_day, :fitness_level,
                 :equipment, :dietary_preference, :allergies, :daily_calorie_target, :protein_target_g)
-            ON CONFLICT DO NOTHING
         """), dict(row))
     print(f"profile: {len(rows)} row(s) migrated")
 

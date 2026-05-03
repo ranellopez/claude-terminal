@@ -6,25 +6,7 @@ import pytest
 import json as json_lib
 from sqlalchemy import create_engine, text
 from planner import get_week_start, filter_meals, filter_exercises, sample_meals, MEALS, EXERCISES, save_profile, load_profile, generate_plan_library, save_plan, load_current_plan, ask_claude, generate_plan, DAYS, format_week_view, load_check_offs, mark_done, check_meal, export_markdown, export_json, add_custom_item, get_all_meals, QUESTIONS, get_all_plans, get_plan_by_id, update_plan_by_id, delete_plan_by_id, restore_plan_by_id
-
-
-def _create_tables(engine):
-    with engine.connect() as c:
-        c.execute(text("""CREATE TABLE profile (
-            id INTEGER PRIMARY KEY, goal TEXT, gym_days TEXT, rest_days TEXT,
-            meal_prep_day TEXT, fitness_level TEXT, equipment TEXT,
-            dietary_preference TEXT, allergies TEXT,
-            daily_calorie_target INTEGER, protein_target_g INTEGER)"""))
-        c.execute(text("""CREATE TABLE weekly_plans (
-            id INTEGER PRIMARY KEY, week_start TEXT UNIQUE,
-            plan_json TEXT, created_at TEXT)"""))
-        c.execute(text("""CREATE TABLE check_offs (
-            id INTEGER PRIMARY KEY, week_start TEXT, day TEXT,
-            item_type TEXT, item_name TEXT, done INTEGER DEFAULT 0,
-            nutrition_feedback TEXT)"""))
-        c.execute(text("""CREATE TABLE custom_items (
-            id INTEGER PRIMARY KEY, item_type TEXT, data_json TEXT)"""))
-        c.commit()
+from tests.conftest import _create_tables
 
 
 @pytest.fixture
