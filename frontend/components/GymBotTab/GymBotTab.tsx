@@ -24,6 +24,8 @@ export default function GymBotTab({ profile, onGenerated, onToast, active }: Pro
       setInitialized(true)
       initChat()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Intentional: initialized/loading guard prevents re-entry; profile is stable for the lifetime of a chat session
   }, [active])
 
   useEffect(() => {
@@ -85,6 +87,11 @@ export default function GymBotTab({ profile, onGenerated, onToast, active }: Pro
     setReady(false)
     setLoading(false)
     setInitialized(false)
+    // Re-trigger greeting immediately if the tab is already visible
+    if (active) {
+      setInitialized(true)
+      initChat()
+    }
   }
 
   function handleSend() {
