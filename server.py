@@ -16,9 +16,10 @@ STATIC_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(title="Planner API")
 
+_frontend_url = os.getenv("FRONTEND_URL")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[_frontend_url] if _frontend_url else ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
