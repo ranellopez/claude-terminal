@@ -3,7 +3,7 @@ import json
 import random
 import os
 import sys
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta, datetime, timezone
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
@@ -324,7 +324,7 @@ def save_plan(conn, week_start, plan):
         INSERT INTO weekly_plans (week_start, plan_json, created_at)
         VALUES (:week_start, :plan_json, :created_at)
         ON CONFLICT(week_start) DO UPDATE SET plan_json=EXCLUDED.plan_json, created_at=EXCLUDED.created_at
-    """), {"week_start": week_start, "plan_json": json.dumps(plan), "created_at": datetime.utcnow().isoformat()})
+    """), {"week_start": week_start, "plan_json": json.dumps(plan), "created_at": datetime.now(timezone.utc).isoformat()})
     conn.commit()
 
 
@@ -722,49 +722,47 @@ def main():
         print("Warning: ANTHROPIC_API_KEY not set. AI features will be unavailable.")
         print("  Set it with: export ANTHROPIC_API_KEY=your_key\n")
 
-    conn = get_db()
-
-    profile = load_profile(conn)
-    if profile is None:
-        print("Welcome! Let's set up your profile first.\n")
-        profile = profile_wizard(conn)
-        print("Generating your first weekly plan...\n")
-        generate_plan(profile, conn)
-
-    while True:
-        print("\n=== PLANNER MENU ===")
-        print("1. View this week's plan")
-        print("2. Check off items")
-        print("3. Generate new plan for this week")
-        print("4. Add custom meal or exercise")
-        print("5. Meal checker — log what you ate")
-        print("6. Export plan (markdown / JSON)")
-        print("7. Edit profile")
-        print("8. Quit")
-        choice = input("\nEnter 1-8: ").strip()
-
-        if choice == "1":
-            display_week(conn)
-        elif choice == "2":
-            check_off_menu(conn)
-        elif choice == "3":
-            profile = load_profile(conn)
+    with get_db() as conn:
+        profile = load_profile(conn)
+        if profile is None:
+            print("Welcome! Let's set up your profile first.\n")
+            profile = profile_wizard(conn)
+            print("Generating your first weekly plan...\n")
             generate_plan(profile, conn)
-            display_week(conn)
-        elif choice == "4":
-            add_custom_menu(conn)
-        elif choice == "5":
-            meal_checker_menu(conn)
-        elif choice == "6":
-            export_menu(conn)
-        elif choice == "7":
-            edit_profile_menu(conn)
-        elif choice == "8":
-            print("Goodbye!")
-            conn.close()
-            sys.exit(0)
-        else:
-            print("Invalid choice, enter 1-8.")
+
+        while True:
+            print("\n=== PLANNER MENU ===")
+            print("1. View this week's plan")
+            print("2. Check off items")
+            print("3. Generate new plan for this week")
+            print("4. Add custom meal or exercise")
+            print("5. Meal checker — log what you ate")
+            print("6. Export plan (markdown / JSON)")
+            print("7. Edit profile")
+            print("8. Quit")
+            choice = input("\nEnter 1-8: ").strip()
+
+            if choice == "1":
+                display_week(conn)
+            elif choice == "2":
+                check_off_menu(conn)
+            elif choice == "3":
+                profile = load_profile(conn)
+                generate_plan(profile, conn)
+                display_week(conn)
+            elif choice == "4":
+                add_custom_menu(conn)
+            elif choice == "5":
+                meal_checker_menu(conn)
+            elif choice == "6":
+                export_menu(conn)
+            elif choice == "7":
+                edit_profile_menu(conn)
+            elif choice == "8":
+                print("Goodbye!")
+                sys.exit(0)
+            else:
+                print("Invalid choice, enter 1-8.")
 
 
 if __name__ == "__main__":
