@@ -1,13 +1,15 @@
 import sys
 import os
-import tempfile
 import unittest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import StaticPool
 
 sys.path.insert(0, ".")
 import planner
 from server import app
+from tests.conftest import _create_tables
 
 SAMPLE_PROFILE = {
     "goal": "build_muscle",
@@ -26,15 +28,18 @@ SAMPLE_PROFILE = {
 class TestPlannerAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.db_fd, cls.db_path = tempfile.mkstemp(suffix=".db")
-        planner.DB_PATH = cls.db_path  # must precede TestClient(app) — get_db reads DB_PATH at request time
+        test_engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        _create_tables(test_engine)
+        planner.engine = test_engine
         cls.client = TestClient(app)
 
     @classmethod
     def tearDownClass(cls):
-        planner.DB_PATH = "planner.db"
-        os.close(cls.db_fd)
-        os.unlink(cls.db_path)
+        planner.engine.dispose()
 
     def _req(self, method, path, body=None, params=None):
         fn = getattr(self.client, method.lower())
@@ -230,14 +235,11 @@ class TestPlannerAPI(unittest.TestCase):
         self.assertTrue(len(data["feedback"]) > 0)
 
     def test_22_post_meal_check_no_profile(self):
-        import sqlite3 as _sqlite3
-        conn = _sqlite3.connect(planner.DB_PATH)
-        conn.execute("DELETE FROM profile")
-        conn.commit()
-        conn.close()
+        with planner.engine.connect() as conn:
+            conn.execute(text("DELETE FROM profile"))
+            conn.commit()
         status, _ = self._req("POST", "/api/meal-check", {"food_desc": "pizza"})
         self.assertEqual(status, 400)
-        # restore profile for any tests that follow
         self._req("PUT", "/api/profile", SAMPLE_PROFILE)
 
     def test_23_post_chat(self):
