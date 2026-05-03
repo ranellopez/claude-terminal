@@ -1,12 +1,13 @@
 // frontend/components/PlanModal/PlanModal.tsx
 'use client'
-import { useState, useCallback } from 'react'
-import type { PlanFull, WeekPlan, DayPlan } from '@/lib/types'
+import { useState, useCallback, useRef } from 'react'
+import type { PlanFull, WeekPlan, DayPlan, Exercise } from '@/lib/types'
 import { updatePlan } from '@/lib/api'
 import styles from './PlanModal.module.css'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack'] as const
+type KeyedExercise = Exercise & { _key: number }
 
 interface Props {
   full: PlanFull
@@ -16,7 +17,16 @@ interface Props {
 }
 
 export default function PlanModal({ full, planId, onClose, onSaved }: Props) {
-  const [plan, setPlan] = useState<WeekPlan>(() => JSON.parse(JSON.stringify(full.plan)))
+  const keyCounter = useRef(0)
+  const [plan, setPlan] = useState<WeekPlan>(() => {
+    const cloned: WeekPlan = JSON.parse(JSON.stringify(full.plan))
+    for (const day of Object.values(cloned)) {
+      if (day?.exercises) {
+        day.exercises = day.exercises.map(e => ({ ...e, _key: keyCounter.current++ } as KeyedExercise))
+      }
+    }
+    return cloned
+  })
   const [activeDay, setActiveDay] = useState<(typeof DAYS)[number]>('Mon')
   const [saving, setSaving] = useState(false)
 
@@ -40,7 +50,7 @@ export default function PlanModal({ full, planId, onClose, onSaved }: Props) {
   }
 
   function addExercise() {
-    updateDay({ exercises: [...(day.exercises ?? []), { name: '', sets: 3, reps: '10-12' }] })
+    updateDay({ exercises: [...(day.exercises ?? []), { name: '', sets: 3, reps: '10-12', _key: keyCounter.current++ } as KeyedExercise] })
   }
 
   function removeExercise(i: number) {
@@ -63,10 +73,19 @@ export default function PlanModal({ full, planId, onClose, onSaved }: Props) {
 
   async function handleSave() {
     setSaving(true)
-    await updatePlan(planId, plan)
-    setSaving(false)
-    onSaved()
-    onClose()
+    try {
+      const clean: WeekPlan = {}
+      for (const [k, day] of Object.entries(plan)) {
+        clean[k as keyof typeof clean] = day
+          ? { ...day, exercises: (day.exercises as KeyedExercise[] | undefined)?.map(({ _key: _k, ...e }) => e) }
+          : day
+      }
+      await updatePlan(planId, clean)
+      onSaved()
+      onClose()
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleOverlayClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -101,7 +120,7 @@ export default function PlanModal({ full, planId, onClose, onSaved }: Props) {
             <div className={styles.fieldGroup}>
               <div className={styles.sectionLabel}>💪 EXERCISES</div>
               {(day.exercises ?? []).map((e, i) => (
-                <div key={i} className={styles.fieldRow}>
+                <div key={(e as KeyedExercise)._key ?? i} className={styles.fieldRow}>
                   <input className={`${styles.input} ${styles.inputName}`} value={e.name} placeholder="Exercise name"
                     onChange={ev => updateExercise(i, 'name', ev.target.value)} />
                   <input className={`${styles.input} ${styles.inputNum}`} value={String(e.sets)} placeholder="Sets"
