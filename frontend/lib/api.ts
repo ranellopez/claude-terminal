@@ -10,6 +10,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     opts.body = JSON.stringify(body)
   }
   const res = await fetch(`${BASE}${path}`, opts)
+  if (!res.ok) throw new Error(`${method} ${path} failed: ${res.status}`)
   return res.json() as Promise<T>
 }
 

@@ -22,7 +22,8 @@ export type DayPlan = {
   meals?: Meals
 }
 
-export type WeekPlan = Record<string, DayPlan>
+export type DayKey = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun'
+export type WeekPlan = Partial<Record<DayKey, DayPlan>>
 export type PlanFull = { id: number; plan: WeekPlan }
 
 export type Profile = {

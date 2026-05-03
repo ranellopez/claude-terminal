@@ -8,7 +8,7 @@ beforeEach(() => {
 
 describe('listPlans', () => {
   it('GETs /api/plans', async () => {
-    mockFetch.mockResolvedValueOnce({ json: async () => [] })
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => [] })
     const { listPlans } = await import('../api')
     await listPlans()
     expect(mockFetch).toHaveBeenCalledWith(
@@ -20,7 +20,7 @@ describe('listPlans', () => {
 
 describe('generatePlan', () => {
   it('POSTs to /api/plans/generate', async () => {
-    mockFetch.mockResolvedValueOnce({ json: async () => ({ ok: true, plan: {} }) })
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, plan: {} }) })
     const { generatePlan } = await import('../api')
     const profile = {
       goal: 'build_muscle', gym_days: 'Mon,Wed,Fri', rest_days: 'Tue,Thu,Sat,Sun',
@@ -37,7 +37,7 @@ describe('generatePlan', () => {
 
 describe('postChat', () => {
   it('POSTs to /api/chat with messages and profile', async () => {
-    mockFetch.mockResolvedValueOnce({ json: async () => ({ message: 'Hi', ready: false }) })
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ message: 'Hi', ready: false }) })
     const { postChat } = await import('../api')
     await postChat([{ role: 'user', content: 'Hello' }], {})
     expect(mockFetch).toHaveBeenCalledWith(
