@@ -1,6 +1,6 @@
 // frontend/components/NewPlanTab/NewPlanTab.tsx
 'use client'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import type { Question, Profile } from '@/lib/types'
 import { generatePlan } from '@/lib/api'
 import styles from './NewPlanTab.module.css'
@@ -42,6 +42,9 @@ export default function NewPlanTab({ questions, profile, onGenerated, onToast }:
     }
   })
   const [generating, setGenerating] = useState(false)
+  const textRef = useRef<HTMLInputElement>(null)
+  const calRef = useRef<HTMLInputElement>(null)
+  const protRef = useRef<HTMLInputElement>(null)
 
   const total = questions.length
 
@@ -58,12 +61,12 @@ export default function NewPlanTab({ questions, profile, onGenerated, onToast }:
     const q = questions[step]
     if (!q) return
     if (q.type === 'text') {
-      const el = document.getElementById('wizard-text') as HTMLInputElement
-      setAnswer(q.key, el?.value.trim() || 'none')
+      setAnswer(q.key, textRef.current?.value.trim() || 'none')
     } else if (q.type === 'targets') {
-      const cal = parseInt((document.getElementById('wizard-cal') as HTMLInputElement)?.value) || 2000
-      const prot = parseInt((document.getElementById('wizard-prot') as HTMLInputElement)?.value) || 150
-      setAnswer(q.key, { calories: cal, protein: prot })
+      setAnswer(q.key, {
+        calories: parseInt(calRef.current?.value ?? '') || 2000,
+        protein: parseInt(protRef.current?.value ?? '') || 150,
+      })
     }
     setStep(s => s + 1)
   }
@@ -188,7 +191,7 @@ export default function NewPlanTab({ questions, profile, onGenerated, onToast }:
         )}
 
         {q.type === 'text' && (
-          <input id="wizard-text" className={`${styles.input} ${styles.inputWide}`}
+          <input ref={textRef} className={`${styles.input} ${styles.inputWide}`}
             defaultValue={(ans as string) ?? ''} placeholder={q.placeholder ?? ''} />
         )}
 
@@ -196,12 +199,12 @@ export default function NewPlanTab({ questions, profile, onGenerated, onToast }:
           <div className={styles.targetsRow}>
             <div>
               <div className={styles.fieldLabel}>Calories (kcal)</div>
-              <input id="wizard-cal" className={`${styles.input} ${styles.inputWide}`} type="number"
+              <input ref={calRef} className={`${styles.input} ${styles.inputWide}`} type="number"
                 defaultValue={(ans as { calories: number })?.calories ?? defCal} />
             </div>
             <div>
               <div className={styles.fieldLabel}>Protein (g)</div>
-              <input id="wizard-prot" className={`${styles.input} ${styles.inputWide}`} type="number"
+              <input ref={protRef} className={`${styles.input} ${styles.inputWide}`} type="number"
                 defaultValue={(ans as { protein: number })?.protein ?? defProt} />
             </div>
           </div>
