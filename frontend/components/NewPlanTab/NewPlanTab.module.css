@@ -1,0 +1,45 @@
+/* frontend/components/NewPlanTab/NewPlanTab.module.css */
+.wrap { max-width: 560px; }
+
+.progressHeader { margin-bottom: 16px; }
+.stepLabel      { font-size: 11px; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px; margin-bottom: 4px; }
+.track          { background: var(--surface-raised); border-radius: 3px; height: 4px; overflow: hidden; }
+.fill           { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s; }
+
+.card     { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 12px; }
+.question { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
+.why      { font-size: 12px; color: var(--accent); font-style: italic; margin-bottom: 14px; }
+
+.choices  { display: flex; flex-wrap: wrap; gap: 8px; }
+.choice   {
+  padding: 7px 16px; border-radius: 6px; font-size: 13px; font-weight: 700;
+  background: var(--surface-raised); border: 1px solid var(--border);
+  color: var(--text); transition: all 0.15s;
+}
+.choice:hover:not(.choiceSelected) { border-color: var(--accent); }
+.choiceSelected { background: var(--accent); border-color: var(--accent); color: #000; }
+
+.input       { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; color: var(--text); font-size: 13px; outline: none; transition: border-color 0.15s; }
+.input:focus { border-color: var(--accent); }
+.inputWide   { width: 100%; }
+.fieldLabel  { font-size: 11px; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px; margin-bottom: 4px; }
+.targetsRow  { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.nav     { display: flex; gap: 8px; }
+.btn     { padding: 10px 18px; border-radius: 6px; font-size: 13px; font-weight: 800; border: none; letter-spacing: 0.5px; transition: opacity 0.15s; }
+.btn:hover { opacity: 0.85; }
+.btnNext { background: var(--accent); color: #000; flex: 1; }
+.btnBack { background: var(--surface-raised); color: var(--text-muted); }
+
+.summaryList { list-style: none; }
+.summaryRow  { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.summaryKey  { color: var(--text-muted); }
+.summaryVal  { font-weight: 700; }
+
+.generateBtn {
+  background: var(--accent); color: #000; border: none; border-radius: 8px;
+  padding: 12px; width: 100%; font-size: 14px; font-weight: 800; letter-spacing: 0.5px;
+  margin-top: 14px; transition: opacity 0.15s;
+}
+.generateBtn:hover    { opacity: 0.85; }
+.generateBtn:disabled { opacity: 0.4; cursor: not-allowed; }

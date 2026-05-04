@@ -1,0 +1,28 @@
+/* frontend/app/globals.css */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0a0a;
+  --surface: #111111;
+  --surface-raised: #1a1a1a;
+  --accent: #c0f000;
+  --accent-dim: rgba(192, 240, 0, 0.12);
+  --text: #ffffff;
+  --text-muted: #888888;
+  --text-dim: #555555;
+  --border: #222222;
+  --danger: #ff4040;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding: 20px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+button { cursor: pointer; font-family: inherit; }
+input  { font-family: inherit; }

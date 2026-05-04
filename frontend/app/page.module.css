@@ -1,0 +1,8 @@
+/* frontend/app/page.module.css */
+.tabs { display: flex; gap: 8px; margin-bottom: 24px; }
+.tab  {
+  padding: 8px 18px; border-radius: 8px; font-size: 12px; font-weight: 800; letter-spacing: 0.5px;
+  border: 1px solid var(--border); color: var(--text-muted); background: transparent; transition: all 0.2s;
+}
+.tab:hover:not(.tabActive) { border-color: var(--accent); color: var(--accent); }
+.tabActive { background: var(--accent); color: #000; border-color: var(--accent); }
