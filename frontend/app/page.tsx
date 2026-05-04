@@ -11,6 +11,12 @@ import styles from './page.module.css'
 
 type Tab = 'plans' | 'new' | 'chat'
 
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'plans', label: '📋 Saved Plans' },
+  { id: 'new',   label: '✨ New Plan' },
+  { id: 'chat',  label: '💬 GymBot' },
+]
+
 export default function Page() {
   const [plans, setPlans] = useState<Plan[]>([])
   const [questions, setQuestions] = useState<Question[]>([])
@@ -20,19 +26,6 @@ export default function Page() {
   const [modalFull, setModalFull] = useState<PlanFull | null>(null)
   const [toast, setToast] = useState({ message: '', type: '' as 'success' | '', visible: false })
 
-  useEffect(() => {
-    Promise.all([listPlans(), getQuestions(), getProfile()]).then(([p, q, prof]) => {
-      setPlans(p as Plan[])
-      setQuestions(q as Question[])
-      if (prof && 'goal' in prof) setProfile(prof as Profile)
-    })
-  }, [])
-
-  const refreshPlans = useCallback(async () => {
-    const p = await listPlans()
-    setPlans(p)
-  }, [])
-
   const showToast = useCallback((message: string, type: 'success' | '' = '') => {
     setToast({ message, type, visible: true })
   }, [])
@@ -41,22 +34,59 @@ export default function Page() {
     setToast(prev => ({ ...prev, visible: false }))
   }, [])
 
-  async function openModal(id: number) {
-    const full = await getPlan(id)
-    setModalFull(full)
-    setModalPlanId(id)
-  }
+  const refreshPlans = useCallback(async () => {
+    try {
+      const p = await listPlans()
+      setPlans(p)
+    } catch {
+      showToast('Failed to load plans')
+    }
+  }, [showToast])
 
-  function closeModal() {
+  useEffect(() => {
+    Promise.all([listPlans(), getQuestions(), getProfile()])
+      .then(([p, q, prof]) => {
+        setPlans(p as Plan[])
+        setQuestions(q as Question[])
+        if (prof && 'goal' in prof) setProfile(prof as Profile)
+      })
+      .catch(() => showToast('Failed to load app data'))
+  }, [showToast])
+
+  const openModal = useCallback(async (id: number) => {
+    try {
+      const full = await getPlan(id)
+      setModalFull(full)
+      setModalPlanId(id)
+    } catch {
+      showToast('Could not load plan')
+    }
+  }, [showToast])
+
+  const closeModal = useCallback(() => {
     setModalPlanId(null)
     setModalFull(null)
-  }
+  }, [])
 
-  const TABS: { id: Tab; label: string }[] = [
-    { id: 'plans', label: '📋 Saved Plans' },
-    { id: 'new',   label: '✨ New Plan' },
-    { id: 'chat',  label: '💬 GymBot' },
-  ]
+  const handleRestore = useCallback(() => {
+    showToast('Plan restored as current week!', 'success')
+    refreshPlans()
+  }, [showToast, refreshPlans])
+
+  const handleDelete = useCallback(() => {
+    showToast('Plan deleted')
+    refreshPlans()
+  }, [showToast, refreshPlans])
+
+  const handleGenerated = useCallback(() => {
+    setActiveTab('plans')
+    refreshPlans()
+  }, [refreshPlans])
+
+  const handleSaved = useCallback(() => {
+    showToast('Changes saved!', 'success')
+    refreshPlans()
+  }, [showToast, refreshPlans])
 
   return (
     <>
@@ -73,8 +103,8 @@ export default function Page() {
       {activeTab === 'plans' && (
         <PlansTab
           plans={plans}
-          onRestore={() => { showToast('Plan restored as current week!', 'success'); refreshPlans() }}
-          onDelete={() => { showToast('Plan deleted'); refreshPlans() }}
+          onRestore={handleRestore}
+          onDelete={handleDelete}
           onEdit={openModal}
         />
       )}
@@ -83,7 +113,7 @@ export default function Page() {
         <NewPlanTab
           questions={questions}
           profile={profile}
-          onGenerated={() => { setActiveTab('plans'); refreshPlans() }}
+          onGenerated={handleGenerated}
           onToast={showToast}
         />
       )}
@@ -91,7 +121,7 @@ export default function Page() {
       {activeTab === 'chat' && (
         <GymBotTab
           profile={profile}
-          onGenerated={() => { setActiveTab('plans'); refreshPlans() }}
+          onGenerated={handleGenerated}
           onToast={showToast}
           active={activeTab === 'chat'}
         />
@@ -102,7 +132,7 @@ export default function Page() {
           full={modalFull}
           planId={modalPlanId}
           onClose={closeModal}
-          onSaved={() => { showToast('Changes saved!', 'success'); refreshPlans() }}
+          onSaved={handleSaved}
         />
       )}
 
