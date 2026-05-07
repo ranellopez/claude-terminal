@@ -12,6 +12,8 @@ const state = {
   chatMessages: [],    // [{role: "user"|"assistant", content: str}]
   chatReady: false,    // true when GymBot signals ready to generate
   chatLoading: false,  // true while waiting for API response
+  chatSessions: [],           // [{id, title, created_at, preview}]
+  activeChatSessionId: null,  // int | null — currently loaded session
 };
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -57,7 +59,7 @@ document.querySelectorAll(".tab").forEach(btn => {
     document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
     document.querySelectorAll(".tab-content").forEach(c => c.classList.toggle("active", c.id === tab + "-tab"));
     if (tab === "new") renderWizard();
-    if (tab === "chat") renderChat();
+    if (tab === "chat") loadSessions().then(() => renderChat());
   });
 });
 
@@ -623,6 +625,19 @@ function renderChat() {
   const el = document.getElementById("gymbot");
   if (!el) return;
 
+  const sessionsHTML = state.chatSessions.map(s => {
+    const isActive = s.id === state.activeChatSessionId;
+    const dateStr = s.created_at
+      ? new Date(s.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+      : "";
+    return `
+      <div class="chat-session-item${isActive ? " active" : ""}" data-session-id="${s.id}">
+        <div class="chat-session-title" data-rename-id="${s.id}">${esc(s.title)}</div>
+        <div class="chat-session-date">${esc(dateStr)}</div>
+        <button class="chat-session-delete" data-delete-id="${s.id}">×</button>
+      </div>`;
+  }).join("");
+
   const messagesHTML = state.chatMessages.map(m => {
     if (m.role === "assistant") {
       return `
@@ -652,34 +667,37 @@ function renderChat() {
       </div>
     </div>` : "";
 
-  const generateHTML = (state.chatReady && !state.chatLoading) ? `
-    <button class="chat-generate-btn" id="chat-gen-btn">Generate my plan ✨</button>` : "";
+  const generateHTML = (state.chatReady && !state.chatLoading)
+    ? `<button class="chat-generate-btn" id="chat-gen-btn">Generate my plan ✨</button>` : "";
 
   const inputDisabled = state.chatLoading || state.chatReady ? "disabled" : "";
 
   el.innerHTML = `
-    <div class="chat-wrap">
-      <div class="chat-header">
-        <div class="chat-avatar">🤖</div>
-        <div style="flex:1">
-          <div class="chat-name">GymBot</div>
-          <div class="chat-status">● Ready to build your plan</div>
+    <div class="chat-layout">
+      <div class="chat-sidebar">
+        <button class="btn btn-primary" id="chat-new-btn"
+          style="margin:10px;font-size:11px;padding:7px 10px;width:calc(100% - 20px)">+ New chat</button>
+        <div class="chat-session-list" id="chat-session-list">${sessionsHTML}</div>
+      </div>
+      <div class="chat-wrap">
+        <div class="chat-header">
+          <div class="chat-avatar">🤖</div>
+          <div style="flex:1">
+            <div class="chat-name">GymBot</div>
+            <div class="chat-status">● Ready to build your plan</div>
+          </div>
         </div>
-        <button class="btn btn-secondary" id="chat-reset-btn" style="font-size:11px">New chat</button>
-      </div>
-      <div class="chat-messages" id="chat-messages-list">
-        ${messagesHTML}
-        ${typingHTML}
-        ${generateHTML}
-      </div>
-      <div class="chat-input-row">
-        <input class="input" id="chat-input" placeholder="Message GymBot…"
-          style="flex:1;border-radius:20px;padding:9px 16px" ${inputDisabled}>
-        <button class="chat-send-btn" id="chat-send-btn" ${inputDisabled}>↑</button>
+        <div class="chat-messages" id="chat-messages-list">
+          ${messagesHTML}${typingHTML}${generateHTML}
+        </div>
+        <div class="chat-input-row">
+          <input class="input" id="chat-input" placeholder="Message GymBot…"
+            style="flex:1;border-radius:20px;padding:9px 16px" ${inputDisabled}>
+          <button class="chat-send-btn" id="chat-send-btn" ${inputDisabled}>↑</button>
+        </div>
       </div>
     </div>`;
 
-  // Auto-scroll to bottom
   const msgList = document.getElementById("chat-messages-list");
   if (msgList) msgList.scrollTop = msgList.scrollHeight;
 
@@ -699,14 +717,75 @@ function renderChat() {
     });
   }
 
-  // Bind reset and generate
-  const resetBtn = document.getElementById("chat-reset-btn");
-  if (resetBtn) resetBtn.addEventListener("click", resetChat);
-  const genBtn = document.getElementById("chat-gen-btn");
-  if (genBtn) genBtn.addEventListener("click", generateFromChat);
+  document.getElementById("chat-new-btn")?.addEventListener("click", resetChat);
+  document.getElementById("chat-gen-btn")?.addEventListener("click", generateFromChat);
 
-  // Trigger opening greeting if chat is empty and not already loading
-  if (state.chatMessages.length === 0 && !state.chatLoading) initChat();
+  // Session item: click to load
+  document.querySelectorAll(".chat-session-item").forEach(item => {
+    item.addEventListener("click", e => {
+      if (e.target.closest(".chat-session-delete")) return;
+      const id = parseInt(item.dataset.sessionId);
+      if (id !== state.activeChatSessionId) loadChatSession(id);
+    });
+  });
+
+  // Delete buttons
+  document.querySelectorAll(".chat-session-delete").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      deleteChatSession(parseInt(btn.dataset.deleteId));
+    });
+  });
+
+  // Inline rename: double-click title
+  document.querySelectorAll(".chat-session-title[data-rename-id]").forEach(titleEl => {
+    titleEl.addEventListener("dblclick", () => {
+      const id = parseInt(titleEl.dataset.renameId);
+      const currentTitle = titleEl.textContent;
+      const inp = document.createElement("input");
+      inp.className = "chat-session-title-input";
+      inp.value = currentTitle;
+      titleEl.replaceWith(inp);
+      inp.focus();
+      inp.select();
+      const save = async () => {
+        const newTitle = inp.value.trim() || currentTitle;
+        await api("PUT", `/api/chats/${id}`, { title: newTitle });
+        const s = state.chatSessions.find(s => s.id === id);
+        if (s) s.title = newTitle;
+        renderChat();
+      };
+      inp.addEventListener("blur", save);
+      inp.addEventListener("keydown", e => {
+        if (e.key === "Enter") { e.preventDefault(); save(); }
+        if (e.key === "Escape") renderChat();
+      });
+    });
+  });
+
+  if (state.chatMessages.length === 0 && !state.chatLoading && state.activeChatSessionId === null) {
+    if (state.chatSessions.length > 0) {
+      loadChatSession(state.chatSessions[0].id);
+    } else {
+      initChat();
+    }
+  }
+}
+
+async function loadSessions() {
+  const sessions = await api("GET", "/api/chats");
+  state.chatSessions = Array.isArray(sessions) ? sessions : [];
+}
+
+async function loadChatSession(id) {
+  const session = await api("GET", `/api/chats/${id}`);
+  if (session.id) {
+    state.chatMessages = session.messages || [];
+    state.chatReady = session.is_ready || false;
+    state.chatLoading = false;
+    state.activeChatSessionId = id;
+    renderChat();
+  }
 }
 
 async function initChat() {
