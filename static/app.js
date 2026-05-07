@@ -800,6 +800,13 @@ async function initChat() {
   } else {
     state.chatMessages.push({ role: "assistant", content: "GymBot is unavailable. Check your ANTHROPIC_API_KEY." });
   }
+  const now = new Date();
+  const title = `Chat — ${now.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+  const sessionRes = await api("POST", "/api/chats", { title, messages: state.chatMessages });
+  if (sessionRes.id) {
+    state.activeChatSessionId = sessionRes.id;
+    await loadSessions();
+  }
   state.chatLoading = false;
   renderChat();
 }
@@ -814,6 +821,12 @@ async function sendMessage(text) {
     if (res.ready) state.chatReady = true;
   } else {
     state.chatMessages.push({ role: "assistant", content: "Something went wrong. Please try again." });
+  }
+  if (state.activeChatSessionId) {
+    await api("PUT", `/api/chats/${state.activeChatSessionId}`, {
+      messages: state.chatMessages,
+      is_ready: state.chatReady,
+    });
   }
   state.chatLoading = false;
   renderChat();
@@ -830,6 +843,7 @@ async function generateFromChat() {
     state.chatMessages = [];
     state.chatReady = false;
     state.chatLoading = false;
+    state.activeChatSessionId = null;
     await refreshPlans();
   } else {
     toast("Generation failed: " + (res.detail || res.error || "unknown"));
