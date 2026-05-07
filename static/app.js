@@ -789,7 +789,21 @@ async function loadChatSession(id) {
   }
 }
 
-async function deleteChatSession(id) {} // implemented in Task 6
+async function deleteChatSession(id) {
+  await api("DELETE", `/api/chats/${id}`);
+  state.chatSessions = state.chatSessions.filter(s => s.id !== id);
+  if (state.activeChatSessionId === id) {
+    state.chatMessages = [];
+    state.chatReady = false;
+    state.chatLoading = false;
+    state.activeChatSessionId = null;
+    if (state.chatSessions.length > 0) {
+      await loadChatSession(state.chatSessions[0].id);
+      return;
+    }
+  }
+  renderChat();
+}
 
 async function initChat() {
   state.chatLoading = true;
