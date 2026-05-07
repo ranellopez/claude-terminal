@@ -18,6 +18,11 @@ def _create_tables(engine):
             nutrition_feedback TEXT)"""))
         c.execute(text("""CREATE TABLE custom_items (
             id INTEGER PRIMARY KEY, item_type TEXT, data_json TEXT)"""))
+        c.execute(text("""CREATE TABLE chat_sessions (
+            id INTEGER PRIMARY KEY, title TEXT,
+            messages_json TEXT DEFAULT '[]',
+            is_ready INTEGER DEFAULT 0,
+            created_at TEXT, updated_at TEXT)"""))
         c.commit()
 
 
