@@ -4,9 +4,11 @@ import json as _json
 from pathlib import Path
 from typing import Optional, List
 from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from datetime import datetime, timezone
 
 sys.path.insert(0, str(Path(__file__).parent))
 import planner
@@ -70,7 +72,25 @@ class ChatIn(BaseModel):
     profile: dict = {}
 
 
-GYMBOT_SYSTEM_PROMPT = """You are GymBot, a friendly and direct AI fitness coach. Your job is to have a natural conversation to gather the user's preferences, then offer to generate their weekly fitness and meal plan.
+class ChatSessionIn(BaseModel):
+    title: str
+    messages: List[ChatMessageIn] = []
+    is_ready: bool = False
+
+
+class ChatSessionUpdateIn(BaseModel):
+    title: Optional[str] = None
+    messages: Optional[List[ChatMessageIn]] = None
+    is_ready: Optional[bool] = None
+
+
+GYMBOT_SYSTEM_PROMPT = """You are GymBot, a friendly and direct AI fitness coach. You MUST respond with ONLY a raw JSON object — no markdown, no code blocks, no text before or after the JSON.
+
+Response format (raw JSON only):
+{{"message": "your conversational response here", "ready": false}}
+
+When ready to generate a plan:
+{{"message": "Perfect — I've got everything I need! [brief summary]. Ready to generate your plan? 🚀", "ready": true}}
 
 Current user profile:
 {profile_summary}
@@ -80,13 +100,8 @@ Rules:
 - Ask follow-up questions ONE AT A TIME — never ask multiple questions in a single message
 - Gather all of the following if not already known: fitness goal, gym days (which specific days), meal prep day, fitness level (beginner/intermediate/advanced), available equipment, dietary preference, food allergies, daily calorie target, daily protein target
 - Keep responses concise and encouraging
-- When you have gathered enough information for a complete 7-day plan, set ready to true
-
-CRITICAL: Always respond with ONLY valid JSON — no preamble, no markdown:
-{{"message": "your conversational response here", "ready": false}}
-
-When ready to generate:
-{{"message": "Perfect — I've got everything I need! [brief summary]. Ready to generate your plan? 🚀", "ready": true}}"""
+- Never use markdown formatting — no bold, no asterisks, no bullet points
+- When you have gathered enough information for a complete 7-day plan, set ready to true"""
 
 GYMBOT_EXTRACT_PROMPT = """Extract a complete fitness profile from the conversation. Fill any missing fields using the base profile provided. Return ONLY valid JSON with no other text.
 
@@ -255,11 +270,22 @@ def post_chat(body: ChatIn):
 
     try:
         raw = planner.chat_with_claude(messages, system)
+        cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         try:
-            parsed = _json.loads(raw)
-            return {"message": parsed.get("message", raw), "ready": bool(parsed.get("ready", False))}
+            parsed = _json.loads(cleaned)
+            msg = parsed.get("message", cleaned)
+            # handle double-wrapped case where message field is itself a JSON string
+            if isinstance(msg, str):
+                try:
+                    inner = _json.loads(msg)
+                    if isinstance(inner, dict) and "message" in inner:
+                        msg = inner["message"]
+                        parsed["ready"] = parsed.get("ready") or inner.get("ready", False)
+                except (_json.JSONDecodeError, ValueError):
+                    pass
+            return {"message": msg, "ready": bool(parsed.get("ready", False))}
         except (_json.JSONDecodeError, ValueError):
-            return {"message": raw, "ready": False}
+            return {"message": cleaned, "ready": False}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -289,6 +315,75 @@ def post_chat_generate(body: ChatIn, conn=Depends(get_db)):
 
     plan = planner.generate_plan(profile, conn)
     return {"ok": True, "plan": plan}
+
+
+# --- Saved chat sessions ---
+
+@app.get("/api/chats")
+def list_chats(conn=Depends(get_db)):
+    rows = conn.execute(
+        text("SELECT id, title, created_at, messages_json FROM chat_sessions ORDER BY created_at DESC")
+    ).fetchall()
+    result = []
+    for row in rows:
+        msgs = _json.loads(row.messages_json or "[]")
+        preview = next((m["content"][:80] for m in msgs if m["role"] == "assistant"), "")
+        result.append({"id": row.id, "title": row.title, "created_at": row.created_at, "preview": preview})
+    return result
+
+
+@app.post("/api/chats", status_code=201)
+def create_chat(body: ChatSessionIn, conn=Depends(get_db)):
+    now = datetime.now(timezone.utc).isoformat()
+    result = conn.execute(
+        text("INSERT INTO chat_sessions (title, messages_json, is_ready, created_at, updated_at) "
+             "VALUES (:title, :msgs, :is_ready, :now, :now)"),
+        {"title": body.title, "msgs": _json.dumps([m.model_dump() for m in body.messages]),
+         "is_ready": int(body.is_ready), "now": now},
+    )
+    conn.commit()
+    return {"id": result.lastrowid, "title": body.title, "created_at": now}
+
+
+@app.get("/api/chats/{chat_id}")
+def get_chat(chat_id: int, conn=Depends(get_db)):
+    row = conn.execute(text("SELECT * FROM chat_sessions WHERE id = :id"), {"id": chat_id}).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return {
+        "id": row.id, "title": row.title,
+        "messages": _json.loads(row.messages_json or "[]"),
+        "is_ready": bool(row.is_ready),
+        "created_at": row.created_at, "updated_at": row.updated_at,
+    }
+
+
+@app.put("/api/chats/{chat_id}")
+def update_chat(chat_id: int, body: ChatSessionUpdateIn, conn=Depends(get_db)):
+    row = conn.execute(text("SELECT * FROM chat_sessions WHERE id = :id"), {"id": chat_id}).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    title = body.title if body.title is not None else row.title
+    msgs = (_json.dumps([m.model_dump() for m in body.messages])
+            if body.messages is not None else row.messages_json)
+    is_ready = int(body.is_ready) if body.is_ready is not None else row.is_ready
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        text("UPDATE chat_sessions SET title=:title, messages_json=:msgs, "
+             "is_ready=:is_ready, updated_at=:now WHERE id=:id"),
+        {"title": title, "msgs": msgs, "is_ready": is_ready, "now": now, "id": chat_id},
+    )
+    conn.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/chats/{chat_id}")
+def delete_chat(chat_id: int, conn=Depends(get_db)):
+    result = conn.execute(text("DELETE FROM chat_sessions WHERE id = :id"), {"id": chat_id})
+    conn.commit()
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return {"ok": True}
 
 
 # --- Static files (must be last) ---

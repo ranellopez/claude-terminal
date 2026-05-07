@@ -296,5 +296,82 @@ class TestPlannerAPI(unittest.TestCase):
         self.assertIn("Mon", data["plan"])
 
 
+class TestChatsAPI(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        test_engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        _create_tables(test_engine)
+        planner.engine = test_engine
+        cls.client = TestClient(app)
+        cls.chat_id = None
+
+    @classmethod
+    def tearDownClass(cls):
+        planner.engine.dispose()
+
+    def _req(self, method, path, body=None):
+        fn = getattr(self.client, method.lower())
+        return fn(path, json=body) if body is not None else fn(path)
+
+    def test_01_create_chat(self):
+        resp = self._req("POST", "/api/chats", {
+            "title": "Test Chat",
+            "messages": [{"role": "assistant", "content": "Hello!"}],
+            "is_ready": False,
+        })
+        self.assertEqual(resp.status_code, 201)
+        data = resp.json()
+        self.assertIn("id", data)
+        self.assertEqual(data["title"], "Test Chat")
+        TestChatsAPI.chat_id = data["id"]
+
+    def test_02_list_chats(self):
+        resp = self._req("GET", "/api/chats")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIsInstance(data, list)
+        chat = next((c for c in data if c["id"] == self.chat_id), None)
+        self.assertIsNotNone(chat)
+        self.assertEqual(chat["preview"], "Hello!")
+
+    def test_03_get_chat(self):
+        resp = self._req("GET", f"/api/chats/{self.chat_id}")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["messages"][0]["content"], "Hello!")
+        self.assertFalse(data["is_ready"])
+
+    def test_04_update_chat_title(self):
+        resp = self._req("PUT", f"/api/chats/{self.chat_id}", {"title": "Renamed"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["ok"])
+        self.assertEqual(self._req("GET", f"/api/chats/{self.chat_id}").json()["title"], "Renamed")
+
+    def test_05_update_messages_and_ready(self):
+        msgs = [
+            {"role": "assistant", "content": "Hello!"},
+            {"role": "user", "content": "Build muscle"},
+            {"role": "assistant", "content": "Great choice!"},
+        ]
+        resp = self._req("PUT", f"/api/chats/{self.chat_id}", {"messages": msgs, "is_ready": True})
+        self.assertEqual(resp.status_code, 200)
+        data = self._req("GET", f"/api/chats/{self.chat_id}").json()
+        self.assertEqual(len(data["messages"]), 3)
+        self.assertTrue(data["is_ready"])
+
+    def test_06_delete_chat(self):
+        resp = self._req("DELETE", f"/api/chats/{self.chat_id}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["ok"])
+        self.assertEqual(self._req("GET", f"/api/chats/{self.chat_id}").status_code, 404)
+
+    def test_07_delete_nonexistent_returns_404(self):
+        self.assertEqual(self._req("DELETE", "/api/chats/99999").status_code, 404)
+
+
 if __name__ == "__main__":
     unittest.main()
