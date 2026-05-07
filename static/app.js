@@ -806,6 +806,8 @@ async function initChat() {
   if (sessionRes.id) {
     state.activeChatSessionId = sessionRes.id;
     await loadSessions();
+  } else {
+    toast("Chat session could not be saved. Messages will not persist.", "error");
   }
   state.chatLoading = false;
   renderChat();
@@ -823,10 +825,11 @@ async function sendMessage(text) {
     state.chatMessages.push({ role: "assistant", content: "Something went wrong. Please try again." });
   }
   if (state.activeChatSessionId) {
-    await api("PUT", `/api/chats/${state.activeChatSessionId}`, {
+    const saveRes = await api("PUT", `/api/chats/${state.activeChatSessionId}`, {
       messages: state.chatMessages,
       is_ready: state.chatReady,
     });
+    if (!saveRes.ok) toast("Auto-save failed.", "error");
   }
   state.chatLoading = false;
   renderChat();
