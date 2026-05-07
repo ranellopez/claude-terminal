@@ -749,6 +749,7 @@ function renderChat() {
       inp.focus();
       inp.select();
       const save = async () => {
+        inp.removeEventListener("blur", save);
         const newTitle = inp.value.trim() || currentTitle;
         await api("PUT", `/api/chats/${id}`, { title: newTitle });
         const s = state.chatSessions.find(s => s.id === id);
@@ -787,6 +788,8 @@ async function loadChatSession(id) {
     renderChat();
   }
 }
+
+async function deleteChatSession(id) {} // implemented in Task 6
 
 async function initChat() {
   state.chatLoading = true;
@@ -840,6 +843,7 @@ function resetChat() {
   state.chatMessages = [];
   state.chatReady = false;
   state.chatLoading = false;
+  state.activeChatSessionId = null;
   renderChat();
 }
 
