@@ -274,7 +274,11 @@ def post_chat(body: ChatIn):
         try:
             parsed = _json.loads(cleaned)
             msg = parsed.get("message", cleaned)
-            # handle double-wrapped case where message field is itself a JSON string
+            # unwrap if message field is a nested dict
+            if isinstance(msg, dict) and "message" in msg:
+                parsed["ready"] = parsed.get("ready") or msg.get("ready", False)
+                msg = msg["message"]
+            # unwrap if message field is a JSON-encoded string
             if isinstance(msg, str):
                 try:
                     inner = _json.loads(msg)
@@ -283,7 +287,7 @@ def post_chat(body: ChatIn):
                         parsed["ready"] = parsed.get("ready") or inner.get("ready", False)
                 except (_json.JSONDecodeError, ValueError):
                     pass
-            return {"message": msg, "ready": bool(parsed.get("ready", False))}
+            return {"message": str(msg), "ready": bool(parsed.get("ready", False))}
         except (_json.JSONDecodeError, ValueError):
             return {"message": cleaned, "ready": False}
     except Exception as e:
