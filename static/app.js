@@ -811,17 +811,17 @@ async function initChat() {
   const res = await api("POST", "/api/chat", { messages: [], profile: state.profile });
   if (res.message) {
     state.chatMessages.push({ role: "assistant", content: res.message });
+    const now = new Date();
+    const title = `Chat — ${now.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+    const sessionRes = await api("POST", "/api/chats", { title, messages: state.chatMessages });
+    if (sessionRes.id) {
+      state.activeChatSessionId = sessionRes.id;
+      await loadSessions();
+    } else {
+      toast("Chat session could not be saved. Messages will not persist.", "error");
+    }
   } else {
     state.chatMessages.push({ role: "assistant", content: "GymBot is unavailable. Check your ANTHROPIC_API_KEY." });
-  }
-  const now = new Date();
-  const title = `Chat — ${now.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
-  const sessionRes = await api("POST", "/api/chats", { title, messages: state.chatMessages });
-  if (sessionRes.id) {
-    state.activeChatSessionId = sessionRes.id;
-    await loadSessions();
-  } else {
-    toast("Chat session could not be saved. Messages will not persist.", "error");
   }
   state.chatLoading = false;
   renderChat();
