@@ -1,8 +1,5 @@
 // frontend/lib/api.ts
-import type {
-  Plan, PlanFull, Profile, Question, ChatMessage, ChatResponse, WeekPlan,
-  BronelResponse, ChatSessionSummary, ChatSessionFull,
-} from './types'
+import type { Plan, PlanFull, Profile, Question, ChatMessage, ChatResponse, WeekPlan } from './types'
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? ''
 
@@ -31,15 +28,3 @@ export const postChat = (messages: ChatMessage[], profile: Partial<Profile>) =>
   req<ChatResponse>('POST', '/api/chat', { messages, profile })
 export const postChatGenerate = (messages: ChatMessage[], profile: Partial<Profile>) =>
   req<{ ok: boolean; plan: WeekPlan }>('POST', '/api/chat/generate', { messages, profile })
-
-export const postBronelChat = (messages: ChatMessage[]) =>
-  req<BronelResponse>('POST', '/api/bronel/chat', { messages })
-
-export const listChats = (bot?: string) =>
-  req<ChatSessionSummary[]>('GET', bot ? `/api/chats?bot=${encodeURIComponent(bot)}` : '/api/chats')
-export const createChat = (bot: string, title: string, messages: ChatMessage[] = []) =>
-  req<{ id: number; title: string; created_at: string }>('POST', '/api/chats', { bot, title, messages })
-export const getChat = (id: number) => req<ChatSessionFull>('GET', `/api/chats/${id}`)
-export const updateChat = (id: number, patch: { title?: string; messages?: ChatMessage[]; is_ready?: boolean }) =>
-  req<{ ok: boolean }>('PUT', `/api/chats/${id}`, patch)
-export const deleteChat = (id: number) => req<{ ok: boolean }>('DELETE', `/api/chats/${id}`)

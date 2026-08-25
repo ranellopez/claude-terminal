@@ -5,18 +5,16 @@ import { listPlans, getQuestions, getProfile, getPlan } from '@/lib/api'
 import PlansTab from '@/components/PlansTab/PlansTab'
 import NewPlanTab from '@/components/NewPlanTab/NewPlanTab'
 import GymBotTab from '@/components/GymBotTab/GymBotTab'
-import BronelTab from '@/components/BronelTab/BronelTab'
 import PlanModal from '@/components/PlanModal/PlanModal'
 import Toast from '@/components/Toast/Toast'
 import styles from './page.module.css'
 
-type Tab = 'plans' | 'new' | 'chat' | 'bronel'
+type Tab = 'plans' | 'new' | 'chat'
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'plans',  label: '📋 Saved Plans' },
-  { id: 'new',    label: '✨ New Plan' },
-  { id: 'chat',   label: '💬 GymBot' },
-  { id: 'bronel', label: '🧠 Bronel' },
+  { id: 'plans', label: '📋 Saved Plans' },
+  { id: 'new',   label: '✨ New Plan' },
+  { id: 'chat',  label: '💬 GymBot' },
 ]
 
 export default function Page() {
@@ -126,13 +124,6 @@ export default function Page() {
           onGenerated={handleGenerated}
           onToast={showToast}
           active={activeTab === 'chat'}
-        />
-      )}
-
-      {activeTab === 'bronel' && (
-        <BronelTab
-          onToast={showToast}
-          active={activeTab === 'bronel'}
         />
       )}
 

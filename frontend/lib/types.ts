@@ -53,15 +53,3 @@ export type Question = {
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string }
 export type ChatResponse = { message: string; ready: boolean }
-export type BronelResponse = { message: string }
-
-export type ChatSessionSummary = { id: number; title: string; created_at: string; preview: string }
-export type ChatSessionFull = {
-  id: number
-  title: string
-  messages: ChatMessage[]
-  is_ready: boolean
-  bot: string
-  created_at: string
-  updated_at: string
-}

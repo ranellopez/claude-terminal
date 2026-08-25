@@ -46,39 +46,3 @@ describe('postChat', () => {
     )
   })
 })
-
-describe('postBronelChat', () => {
-  it('POSTs to /api/bronel/chat with messages', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ message: 'Hi Ranel' }) })
-    const { postBronelChat } = await import('../api')
-    await postBronelChat([{ role: 'user', content: 'Help me plan my week' }])
-    expect(mockFetch).toHaveBeenCalledWith(
-      'http://localhost:8000/api/bronel/chat',
-      expect.objectContaining({ method: 'POST' })
-    )
-  })
-})
-
-describe('listChats', () => {
-  it('GETs /api/chats filtered by bot', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => [] })
-    const { listChats } = await import('../api')
-    await listChats('bronel')
-    expect(mockFetch).toHaveBeenCalledWith(
-      'http://localhost:8000/api/chats?bot=bronel',
-      expect.objectContaining({ method: 'GET' })
-    )
-  })
-})
-
-describe('createChat', () => {
-  it('POSTs to /api/chats with bot, title, and messages', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 1, title: 'Chat', created_at: '2026-08-25T00:00:00Z' }) })
-    const { createChat } = await import('../api')
-    await createChat('bronel', 'Chat', [])
-    expect(mockFetch).toHaveBeenCalledWith(
-      'http://localhost:8000/api/chats',
-      expect.objectContaining({ method: 'POST' })
-    )
-  })
-})
