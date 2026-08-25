@@ -296,6 +296,44 @@ class TestPlannerAPI(unittest.TestCase):
         self.assertIn("Mon", data["plan"])
 
 
+class TestBronelChatAPI(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        test_engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        _create_tables(test_engine)
+        planner.engine = test_engine
+        cls.client = TestClient(app)
+
+    @classmethod
+    def tearDownClass(cls):
+        planner.engine.dispose()
+
+    def test_01_greeting_on_empty_messages(self):
+        with patch("planner.chat_with_claude", return_value="Hey Ranel, I'm Bronel. What's on your plate?"):
+            resp = self.client.post("/api/bronel/chat", json={"messages": []})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("message", data)
+        self.assertIsInstance(data["message"], str)
+
+    def test_02_replies_to_conversation(self):
+        with patch("planner.chat_with_claude", return_value="Let's break your essay into three steps."):
+            resp = self.client.post("/api/bronel/chat", json={
+                "messages": [{"role": "user", "content": "I have an essay due Friday and haven't started"}],
+            })
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["message"], "Let's break your essay into three steps.")
+
+    def test_03_error_returns_500(self):
+        with patch("planner.chat_with_claude", side_effect=RuntimeError("boom")):
+            resp = self.client.post("/api/bronel/chat", json={"messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(resp.status_code, 500)
+
+
 class TestChatsAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -371,6 +409,34 @@ class TestChatsAPI(unittest.TestCase):
 
     def test_07_delete_nonexistent_returns_404(self):
         self.assertEqual(self._req("DELETE", "/api/chats/99999").status_code, 404)
+
+    def test_08_create_bronel_chat_defaults_to_gymbot_when_unset(self):
+        resp = self._req("POST", "/api/chats", {
+            "title": "GymBot chat",
+            "messages": [{"role": "assistant", "content": "Legs day"}],
+        })
+        self.assertEqual(resp.status_code, 201)
+        gymbot_id = resp.json()["id"]
+
+        resp = self._req("POST", "/api/chats", {
+            "title": "Bronel chat",
+            "messages": [{"role": "assistant", "content": "Let's plan your week"}],
+            "bot": "bronel",
+        })
+        self.assertEqual(resp.status_code, 201)
+        bronel_id = resp.json()["id"]
+
+        gymbot_chat = self._req("GET", f"/api/chats/{gymbot_id}").json()
+        self.assertEqual(gymbot_chat["bot"], "gymbot")
+        bronel_chat = self._req("GET", f"/api/chats/{bronel_id}").json()
+        self.assertEqual(bronel_chat["bot"], "bronel")
+
+    def test_09_list_chats_filters_by_bot(self):
+        resp = self._req("GET", "/api/chats?bot=bronel")
+        self.assertEqual(resp.status_code, 200)
+        titles = [c["title"] for c in resp.json()]
+        self.assertIn("Bronel chat", titles)
+        self.assertNotIn("GymBot chat", titles)
 
 
 if __name__ == "__main__":

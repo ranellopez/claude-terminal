@@ -76,12 +76,17 @@ class ChatSessionIn(BaseModel):
     title: str
     messages: List[ChatMessageIn] = []
     is_ready: bool = False
+    bot: str = "gymbot"
 
 
 class ChatSessionUpdateIn(BaseModel):
     title: Optional[str] = None
     messages: Optional[List[ChatMessageIn]] = None
     is_ready: Optional[bool] = None
+
+
+class BronelChatIn(BaseModel):
+    messages: List[ChatMessageIn]
 
 
 GYMBOT_SYSTEM_PROMPT = """You are GymBot, a friendly and direct AI fitness coach. You MUST respond with ONLY a raw JSON object — no markdown, no code blocks, no text before or after the JSON.
@@ -121,6 +126,16 @@ Required output format (all fields mandatory):
   "daily_calorie_target": 2800,
   "protein_target_g": 180
 }}"""
+
+BRONEL_SYSTEM_PROMPT = """You are Bronel, Ranel's personal AI assistant. You help Ranel stay on top of academics and everyday life: schoolwork, studying, deadlines, projects, essays, revision schedules, task planning, and general problem-solving.
+
+Rules:
+- Address the user as Ranel when it feels natural, not in every message.
+- Be direct, practical, and encouraging. Give concrete steps, not vague advice.
+- When Ranel describes a problem (a deadline, a hard assignment, a packed schedule, being stuck on something), help break it down into a clear plan or next actions.
+- Ask a clarifying question when you genuinely need more information to help, but don't interrogate — default to being useful with what you have.
+- Keep responses reasonably concise. Use plain text; light use of short lists is fine for step-by-step plans.
+- You are not limited to academics — help with any problem Ranel brings, but academic work and planning are your specialty."""
 
 
 # --- DB dependency ---
@@ -321,13 +336,35 @@ def post_chat_generate(body: ChatIn, conn=Depends(get_db)):
     return {"ok": True, "plan": plan}
 
 
+# --- Bronel chat ---
+
+@app.post("/api/bronel/chat")
+def post_bronel_chat(body: BronelChatIn):
+    messages = [{"role": m.role, "content": m.content} for m in body.messages]
+    if not messages:
+        messages = [{"role": "user", "content": "Hello"}]
+        system = BRONEL_SYSTEM_PROMPT + "\n\nRanel just opened the chat. Greet them warmly, introduce yourself as Bronel, and ask what they're working on or what's on their plate."
+    else:
+        system = BRONEL_SYSTEM_PROMPT
+
+    try:
+        reply = planner.chat_with_claude(messages, system)
+        return {"message": reply.strip()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # --- Saved chat sessions ---
 
 @app.get("/api/chats")
-def list_chats(conn=Depends(get_db)):
-    rows = conn.execute(
-        text("SELECT id, title, created_at, messages_json FROM chat_sessions ORDER BY created_at DESC")
-    ).fetchall()
+def list_chats(bot: Optional[str] = None, conn=Depends(get_db)):
+    query = "SELECT id, title, created_at, messages_json FROM chat_sessions"
+    params = {}
+    if bot:
+        query += " WHERE bot = :bot"
+        params["bot"] = bot
+    query += " ORDER BY created_at DESC"
+    rows = conn.execute(text(query), params).fetchall()
     result = []
     for row in rows:
         msgs = _json.loads(row.messages_json or "[]")
@@ -340,10 +377,10 @@ def list_chats(conn=Depends(get_db)):
 def create_chat(body: ChatSessionIn, conn=Depends(get_db)):
     now = datetime.now(timezone.utc).isoformat()
     result = conn.execute(
-        text("INSERT INTO chat_sessions (title, messages_json, is_ready, created_at, updated_at) "
-             "VALUES (:title, :msgs, :is_ready, :now, :now)"),
+        text("INSERT INTO chat_sessions (title, messages_json, is_ready, bot, created_at, updated_at) "
+             "VALUES (:title, :msgs, :is_ready, :bot, :now, :now)"),
         {"title": body.title, "msgs": _json.dumps([m.model_dump() for m in body.messages]),
-         "is_ready": int(body.is_ready), "now": now},
+         "is_ready": int(body.is_ready), "bot": body.bot, "now": now},
     )
     conn.commit()
     return {"id": result.lastrowid, "title": body.title, "created_at": now}
@@ -358,6 +395,7 @@ def get_chat(chat_id: int, conn=Depends(get_db)):
         "id": row.id, "title": row.title,
         "messages": _json.loads(row.messages_json or "[]"),
         "is_ready": bool(row.is_ready),
+        "bot": row.bot,
         "created_at": row.created_at, "updated_at": row.updated_at,
     }
 

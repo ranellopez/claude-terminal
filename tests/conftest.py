@@ -22,7 +22,8 @@ def _create_tables(engine):
             id INTEGER PRIMARY KEY, title TEXT,
             messages_json TEXT DEFAULT '[]',
             is_ready INTEGER DEFAULT 0,
-            created_at TEXT, updated_at TEXT)"""))
+            created_at TEXT, updated_at TEXT,
+            bot TEXT DEFAULT 'gymbot')"""))
         c.commit()
 
 
